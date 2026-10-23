@@ -26,6 +26,16 @@ if (window !== window.top) {
     command: (command) => ipcRenderer.send('player:command', command),
   });
 
+  // Hand a stream the embedded player is using to ODM (src/lib/odmBridge.ts).
+  // Main only accepts these from the app's own page, never from a player frame.
+  contextBridge.exposeInMainWorld('lwedflixOdm', {
+    available: () => ipcRenderer.invoke('odm:available'),
+    status: () => ipcRenderer.invoke('odm:status'),
+    openSite: () => ipcRenderer.invoke('odm:open-site'),
+    streams: (origins) => ipcRenderer.invoke('odm:streams', origins),
+    download: (id, meta) => ipcRenderer.invoke('odm:download', id, meta),
+  });
+
   // Every popup is denied in the main process, so links leaving the app
   // (user-posted links in posts and comments) are routed to the system
   // browser here instead of silently doing nothing.

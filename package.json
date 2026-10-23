@@ -15,6 +15,7 @@
     "icon": "node scripts/make-icon.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:odm": "node --test electron/odm.test.js",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.ts\"",
     "test:e2e": "electron tests/e2e/party.js",
     "test:providers": "electron tests/e2e/providers.js",

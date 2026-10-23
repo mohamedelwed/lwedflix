@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, RefreshCw, Server, PlayCircle, Video as VideoIcon, Film, Tv, Play, Lightbulb, LightbulbOff, Rows2, Maximize, PictureInPicture2, SlidersHorizontal } from 'lucide-react';
 import PlayerControls from './PlayerControls';
+import OdmDownloadButton from './OdmDownloadButton';
 import { useControlsMode, setControlsMode } from '@/hooks/useControlsMode';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './AuthProvider';
@@ -133,6 +134,16 @@ const GENZ_VIDEO_IDS = [
 function getGenZEmbedUrl() {
   const id = GENZ_VIDEO_IDS[Math.floor(Math.random() * GENZ_VIDEO_IDS.length)];
   return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&modestbranding=1&rel=0`;
+}
+
+/** Origins whose frame a captured stream may come from. */
+function providerOrigins(provider: Provider): string[] {
+  if (provider.origins && provider.origins.length > 0) return provider.origins;
+  try {
+    return [new URL(provider.url).origin];
+  } catch {
+    return [];
+  }
 }
 
 const VideoPlayer = ({ 
@@ -657,6 +668,16 @@ const VideoPlayer = ({
                     onStreamChange={setControllingStream}
                     extra={
                       <>
+                        <OdmDownloadButton
+                          origins={providerOrigins(activeProvider)}
+                          title={title}
+                          type={type}
+                          season={season}
+                          episode={episode}
+                          triggerClassName={barButtonClass(false)}
+                          activeTriggerClassName={barButtonClass(true)}
+                          placement="above"
+                        />
                         <button onClick={toggleGenZ} title={genZMode ? 'Exit Gen Z Mode' : 'Gen Z Mode'} className={barButtonClass(genZMode)}>
                           <Rows2 size={18} />
                         </button>
@@ -717,6 +738,16 @@ const VideoPlayer = ({
             {/* The app's controls carry all of these once they're up. */}
             {!ourControls && (
             <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+              <OdmDownloadButton
+                origins={providerOrigins(activeProvider)}
+                title={title}
+                type={type}
+                season={season}
+                episode={episode}
+                triggerClassName="p-2 bg-black/60 backdrop-blur-md rounded-full text-white/70 hover:text-white transition-colors border border-white/10"
+                activeTriggerClassName="p-2 bg-accent/80 backdrop-blur-md rounded-full text-white transition-colors border border-accent"
+                placement="below"
+              />
               <button
                 onClick={toggleGenZ}
                 className={`p-2 backdrop-blur-md rounded-full transition-colors border ${

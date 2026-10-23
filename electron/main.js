@@ -11,6 +11,7 @@ const { autoUpdater } = require('electron-updater');
 const { installAdBlock } = require('./adblock');
 const { cleanState, cleanCommand } = require('./playerProtocol');
 const { createMacUpdater } = require('./macUpdater');
+const { setupOdm } = require('./odm');
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
@@ -186,6 +187,15 @@ async function start() {
   });
 
   createWindow();
+
+  // Watches what the embedded players play and forwards a chosen stream to ODM.
+  setupOdm({
+    ses: session.defaultSession,
+    ipcMain,
+    isFromAppPage,
+    webContents: mainWindow.webContents,
+    openExternal: (url) => shell.openExternal(url),
+  });
   setUpUpdates();
 
   serverReady.then(

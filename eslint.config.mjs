@@ -18,6 +18,7 @@ const eslintConfig = defineConfig([
     "tests/e2e/**",
     "server-bundle/**",
     "release/**",
+    "brag-output*/**",
   ]),
 ]);
 

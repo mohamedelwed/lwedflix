@@ -24,3 +24,6 @@ npm-debug.log*
 
 # screenshots from the end-to-end harnesses
 /tests/e2e/output/
+
+# launch videos (/brag-slim)
+/brag-output*/

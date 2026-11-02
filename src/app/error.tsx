@@ -1,8 +1,28 @@
 'use client';
 
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { RotateCw, WifiOff, CloudAlert, Loader2 } from 'lucide-react';
+import Loading from './loading';
+
+// A page that fails is retried quietly, behind the loading outline, before
+// any of this is shown: the failures seen so far all cleared on a second
+// try. Counted per page and forgotten after a while, so a later failure on
+// the same page gets its retries too.
+const AUTO_RETRIES = 2;
+const FORGET_AFTER_MS = 30_000;
+const attempts = new Map<string, { count: number; at: number }>();
+
+/** The attempt number to make for this page, or null once they're used up. */
+function takeAutoRetry(page: string): number | null {
+  const now = Date.now();
+  const previous = attempts.get(page);
+  const count = previous && now - previous.at < FORGET_AFTER_MS ? previous.count : 0;
+  if (count >= AUTO_RETRIES) return null;
+  attempts.set(page, { count: count + 1, at: now });
+  return count + 1;
+}
 
 const subscribeOnline = (onChange: () => void) => {
   window.addEventListener('online', onChange);
@@ -16,7 +36,8 @@ const subscribeOnline = (onChange: () => void) => {
 /**
  * Any page that fails to load — almost always TMDB or the connection — lands
  * here instead of Next's bare error screen. `unstable_retry` re-fetches the
- * page, which is what fixes a network hiccup (`reset` would only re-render).
+ * page, which is what fixes a network hiccup (`reset` would only re-render);
+ * it's tried automatically first, and offered as a button if that fails.
  */
 export default function PageError({
   error,
@@ -27,6 +48,23 @@ export default function PageError({
 }) {
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
   const [retrying, setRetrying] = useState(false);
+  const [gaveUp, setGaveUp] = useState(false);
+  const pathname = usePathname();
+  const retryRef = useRef(unstable_retry);
+  useEffect(() => {
+    retryRef.current = unstable_retry;
+  });
+
+  useEffect(() => {
+    // In the app this lands in renderer.log (electron/main.js), so what
+    // went wrong can be found after the fact — retried or not.
+    console.error(`Page error: ${error.digest ? `[${error.digest}] ` : ''}${error.stack || error.message}`);
+    const attempt = navigator.onLine ? takeAutoRetry(pathname) : null;
+    const timer = setTimeout(() => (attempt ? retryRef.current() : setGaveUp(true)), attempt ? 300 * attempt : 0);
+    return () => clearTimeout(timer);
+  }, [error, pathname]);
+
+  if (!gaveUp) return <Loading />;
 
   const retry = () => {
     setRetrying(true);
@@ -50,7 +88,7 @@ export default function PageError({
           </h1>
           <p className="text-muted text-sm leading-relaxed">
             {online
-              ? 'The movie database or the connection hiccupped. It usually works on a second try.'
+              ? "Lwedflix tried a few times and couldn't reach the movie database. Try again in a moment."
               : 'Lwedflix needs an internet connection to find titles and stream them. Reconnect and try again.'}
           </p>
         </div>
@@ -70,7 +108,12 @@ export default function PageError({
             Go home
           </Link>
         </div>
-        {error.digest && <p className="text-[11px] text-white/25 font-mono">Reference: {error.digest}</p>}
+        <details className="text-[11px] text-white/35">
+          <summary className="cursor-pointer select-none hover:text-white/60 transition-colors">Details</summary>
+          <p className="mt-2 font-mono break-words text-white/50 select-text">
+            {error.digest ? `Server error ${error.digest}` : error.message || String(error)}
+          </p>
+        </details>
       </div>
     </div>
   );

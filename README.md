@@ -192,11 +192,15 @@ electron-updater.
 
 ## Download page
 
-`docs/index.html` detects the visitor's system (including Apple Silicon vs
-Intel where the browser allows), finds the matching installer in the latest
-release, and starts the download. Publish it with GitHub Pages: Settings →
-Pages → Deploy from a branch → `main`, folder `/docs`. It's then at
-https://mohamedelwed.github.io/lwedflix/.
+`docs/index.html` shows the launch video (`docs/assets/lwedflix-demo.mp4`),
+detects the visitor's system (including Apple Silicon vs Intel where the
+browser allows), and puts the matching installer from the latest release on
+its main button — nothing downloads until it's clicked. Publish it with
+GitHub Pages: Settings → Pages → Deploy from a branch → `main`, folder
+`/docs`. It's then at https://mohamedelwed.github.io/lwedflix/.
+
+The video is made with the `/brag-slim` skill: its sources (page captures,
+composition, soundtrack) are in `brag-output/`, which isn't committed.
 
 ## Logs
 

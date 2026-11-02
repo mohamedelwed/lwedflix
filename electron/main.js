@@ -259,7 +259,27 @@ function createWindow() {
     playerFrame = null;
   });
 
+  // Errors from the app's own pages — including the one behind "Couldn't
+  // load this page" — which otherwise vanish with the window.
+  contents.on('console-message', (event) => {
+    if (event.level === 'error' && event.frame === contents.mainFrame && isAppUrl(event.frame.url)) {
+      logRendererError(`${event.message} (${event.sourceId}:${event.lineNumber})`);
+    }
+  });
+
   mainWindow.loadFile(path.join(__dirname, 'intro', 'intro.html'));
+}
+
+let rendererLog = null;
+function logRendererError(message) {
+  if (!rendererLog) {
+    const file = path.join(app.getPath('logs'), 'renderer.log');
+    // Kept across launches (the error is usually noticed after a restart),
+    // but not without limit.
+    const big = fs.existsSync(file) && fs.statSync(file).size > 1024 * 1024;
+    rendererLog = fs.createWriteStream(file, { flags: big ? 'w' : 'a' });
+  }
+  rendererLog.write(`${new Date().toISOString()} v${app.getVersion()} ${message.slice(0, 4000)}\n`);
 }
 
 function showApp() {

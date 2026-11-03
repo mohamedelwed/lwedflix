@@ -49,7 +49,7 @@ app.whenReady().then(async () => {
   const server = http.createServer((req, res) => {
     const src = decodeURIComponent(req.url.slice(1)).replace(/"/g, '');
     res.setHeader('content-type', 'text/html');
-    res.end(`<!doctype html><body style="margin:0;background:#000"><iframe src="${src}" style="border:0;width:100vw;height:100vh" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="no-referrer"></iframe></body>`);
+    res.end(`<!doctype html><body style="margin:0;background:#000"><iframe src="${src}" style="border:0;width:100vw;height:100vh" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture *; fullscreen" referrerpolicy="no-referrer"></iframe></body>`);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const { port } = server.address();

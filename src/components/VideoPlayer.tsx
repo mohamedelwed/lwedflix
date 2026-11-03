@@ -641,7 +641,11 @@ const VideoPlayer = ({
                   src={getEmbedUrl()}
                   className="w-full h-full"
                   allowFullScreen
-                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  // `picture-in-picture *`, not bare: a bare entry only grants
+                  // the origin in `src`, and servers that redirect (vidsrc.me
+                  // lands on vidsrc.sh) would lose it — the mini player then
+                  // fails with a permissions-policy error.
+                  allow="autoplay; encrypted-media; picture-in-picture *; fullscreen"
                   referrerPolicy="no-referrer"
                   onLoad={() => setIsLoading(false)}
                   frameBorder="0"

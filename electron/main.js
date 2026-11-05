@@ -189,13 +189,16 @@ async function start() {
   createWindow();
 
   // Watches what the embedded players play and forwards a chosen stream to ODM.
-  setupOdm({
-    ses: session.defaultSession,
-    ipcMain,
-    isFromAppPage,
-    webContents: mainWindow.webContents,
-    openExternal: (url) => shell.openExternal(url),
-  });
+  // ODM is a Windows app, so the button does not exist anywhere else.
+  if (process.platform === 'win32') {
+    setupOdm({
+      ses: session.defaultSession,
+      ipcMain,
+      isFromAppPage,
+      webContents: mainWindow.webContents,
+      openExternal: (url) => shell.openExternal(url),
+    });
+  }
   setUpUpdates();
 
   serverReady.then(

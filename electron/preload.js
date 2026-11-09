@@ -24,17 +24,33 @@ if (window !== window.top) {
     onProblem: subscribe('player:problem'),
     onShortcut: subscribe('player:shortcut'),
     command: (command) => ipcRenderer.send('player:command', command),
+    autoplay: () => ipcRenderer.send('player:autoplay'),
   });
 
-  // Hand a stream the embedded player is using to ODM (src/lib/odmBridge.ts).
-  // ODM is Windows-only, so the button does not exist on other platforms.
-  // Main only accepts these from the app's own page, never from a player frame.
+  // Downloads (src/lib/downloads.ts): what the player is streaming, saving
+  // it, and the saved list. Main only answers the app's own page, never a
+  // player frame.
+  contextBridge.exposeInMainWorld('lwedflixDownloads', {
+    streams: (origins) => ipcRenderer.invoke('downloads:streams', origins),
+    qualities: (streamId) => ipcRenderer.invoke('downloads:qualities', streamId),
+    start: (streamId, options) => ipcRenderer.invoke('downloads:start', streamId, options),
+    list: () => ipcRenderer.invoke('downloads:list'),
+    pause: (id) => ipcRenderer.invoke('downloads:pause', id),
+    resume: (id) => ipcRenderer.invoke('downloads:resume', id),
+    enqueue: (show, episodes, options) => ipcRenderer.invoke('downloads:enqueue', show, episodes, options),
+    retry: (id) => ipcRenderer.invoke('downloads:retry', id),
+    cancel: (id) => ipcRenderer.invoke('downloads:cancel', id),
+    remove: (id, deleteFile) => ipcRenderer.invoke('downloads:remove', id, deleteFile),
+    reveal: (id) => ipcRenderer.invoke('downloads:reveal', id),
+    openFolder: () => ipcRenderer.invoke('downloads:open-folder'),
+    onChange: subscribe('downloads:changed'),
+  });
+
+  // On Windows a stream can go to ODM instead (src/lib/odmBridge.ts).
   if (process.platform === 'win32') {
     contextBridge.exposeInMainWorld('lwedflixOdm', {
-      available: () => ipcRenderer.invoke('odm:available'),
       status: () => ipcRenderer.invoke('odm:status'),
       openSite: () => ipcRenderer.invoke('odm:open-site'),
-      streams: (origins) => ipcRenderer.invoke('odm:streams', origins),
       download: (id, meta) => ipcRenderer.invoke('odm:download', id, meta),
     });
   }
@@ -130,6 +146,37 @@ function playerBridge() {
   window.addEventListener('pagehide', () => {
     if (video) ipcRenderer.send('player:state', { event: 'gone' });
   });
+
+  // Up next asked for this stream to start on its own (main answers yes
+  // for a short while after): play the feature's <video> once it's there,
+  // pressing the server's play button — the middle of its frame — when it
+  // has none yet. Stops as soon as the feature plays.
+  ipcRenderer.invoke('player:should-autoplay').then((yes) => {
+    if (yes) autoplay();
+  }, () => {});
+
+  function autoplay() {
+    const started = Date.now();
+    let presses = 0;
+    const timer = setInterval(() => {
+      const feature = video ?? [...document.querySelectorAll('video')].find((v) => v.duration >= MIN_DURATION_S);
+      if ((feature && !feature.paused) || Date.now() - started > 25000) {
+        clearInterval(timer);
+        return;
+      }
+      if (feature) {
+        feature.play().catch(() => {});
+      } else if (presses < 3 && innerWidth >= 320 && innerHeight >= 180 && Date.now() - started > 1500) {
+        presses++;
+        const x = innerWidth / 2;
+        const y = innerHeight / 2;
+        const target = document.elementFromPoint(x, y);
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+          target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+        }
+      }
+    }, 1500);
+  }
 
   ipcRenderer.on('player:command', (_event, command) => {
     if (!video) return;

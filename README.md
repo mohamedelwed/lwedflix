@@ -14,7 +14,14 @@ for macOS, Windows and Linux.
   closest neighbours, and every movie page has *Find similar* to open the
   map on it.
 - Movies and episodes resume where you stopped; at the end of an episode,
-  *Up next* counts down to the next one (across seasons too).
+  *Up next* counts down to the next one (across seasons too) and starts it
+  playing — as does picking an episode.
+- **Downloads**: the download button in the player saves the movie or
+  episode that's playing (pick a quality), and the TV page's *Download*
+  saves a whole season or every season. The **Downloads** page (Library in
+  the sidebar) shows what's on its way and plays what's saved — offline
+  too, with the same controls, resume points, *Up next* and history as
+  streaming. Files are ordinary MP4s in `Downloads/Lwedflix`.
 - Lwedflix's own player controls on every server: once a stream plays, the
   server's player interface (and its ads) is hidden and replaced with one
   seek bar, volume, speed, subtitles (for streams that carry them), mini
@@ -25,8 +32,8 @@ for macOS, Windows and Linux.
   F fullscreen, P mini player (picture-in-picture).
 - The players' ad and tracker requests are blocked, and so are the
   "downloads" their ads push.
-- On Windows, *Download* in the player hands the stream that's playing to
-  [ODM](https://salimos.cc/odm), a download manager (see below).
+- On Windows with [ODM](https://salimos.cc/odm) (a download manager)
+  installed, a stream can be handed to it instead.
 - **Watch parties**: start one from any title and share the code or a
   `lwedflix://watch/<CODE>` link. No account needed. Play, pause and seek in
   anyone's player move everyone's — or only the host's, if the host locks
@@ -52,7 +59,11 @@ electron/
   preload.js       the bridges: intro, app, and the player bridge
   playerProtocol.js  what may cross the player bridge (states in, commands out)
   adblock.js       ad/tracker blocklist and download blocking
-  odm.js           Windows: send the playing stream to ODM
+  streams.js       the streams the embedded players load (for downloads)
+  downloads.js     the download queue, saved list, and lwedflix-media://
+  hls.js, mp4.js   HLS playlists in; one ordinary MP4 out
+  resolver.js      finds an episode's stream unseen, for season downloads
+  odm.js           Windows: hand a stream to ODM instead
   macUpdater.js    self-updating on macOS without an Apple Developer ID
   intro/           the launch animation
 scripts/           build-server.mjs, make-icon.mjs, release.mjs
@@ -73,21 +84,51 @@ parties sync through it (`src/lib/partySync.ts`), and progress, resume,
 *Up next*, shortcuts, the mini player and automatic server switching work on
 every server because of it.
 
-**Downloads (Windows, with ODM)** — contributed by Salim May. The players
-are third-party frames, so the app never gets a media URL from them;
-`electron/odm.js` watches the session's responses instead (observe-only
-webRequest events), keeps the recent HLS playlists and video files per
-player frame, and sends the chosen one over ODM's local named pipe
-(`\\.\pipe\odm-<user>`): `ADD_STREAM` for HLS, `ADD_DOWNLOAD` for a file,
-with the player's Referer, Origin, User-Agent and cookies, because the URLs
-are signed and short-lived. The menu lists the likeliest stream first (a
-master playlist, then media playlists by size — an ad's is short — then
-files); DASH (vidlink) is listed but disabled, as ODM can't download it
-yet. Switching server or episode clears the list, episodes are named
-`Show - S01E03`, a closed ODM is started in the tray, and without ODM the
-menu links to its site. The bridge (`window.lwedflixOdm`,
-`src/lib/odmBridge.ts`) exists only on Windows and only answers the app's
-own page.
+**Downloads.** The players are third-party frames, so the app never gets a
+media URL from them; `electron/streams.js` watches the session's responses
+instead (observe-only webRequest events — the capture started as Salim May's
+ODM bridge) and keeps each player frame's recent HLS playlists and video
+files, with the Referer, Origin and User-Agent their servers want. The
+download menu lists the likeliest first (a master playlist, then media
+playlists by size — an ad's is short — then files); DASH (vidlink) is
+listed but can't be downloaded yet.
+
+`electron/downloads.js` then fetches the HLS segments six at a time
+(fewer while a server keeps failing; every request retried with backoff),
+decrypts AES-128, unpacks MPEG-TS with mux.js — servers dress segments up
+as PNGs or pages, so packets are found by their sync bytes — and
+`electron/mp4.js` writes the samples out as one ordinary MP4: the media in a
+single mdat as it arrives, the index at the end. (mux.js's own fragmented
+output plays in a browser but not as a file: QuickTime rejects its fragment
+numbering.) Two downloads run at once. The list, with each title's poster,
+lives in the app's data folder; the page plays files and posters through
+`lwedflix-media://`, which serves only files on the list and honours Range
+for seeking. Quitting with a download running asks first.
+
+A **season download** queues its episodes without playing them:
+`electron/resolver.js` finds each one's stream only when its turn comes
+(stream URLs are signed and expire), with a hidden window that loads the
+episode's server through `/api/player-frame` — embedded as the player
+embeds it, in a session of its own with the ad blocker — presses play and
+takes the first real stream. Your server is tried first, then the others.
+Queued episodes carry on after a restart, and a failed one can be retried.
+
+**Offline**, a download plays with the app's own controls (a
+`DesktopPlayer` over a local `<video>`, `src/lib/localPlayer.ts`), and
+progress goes to the same places as when streaming: resume points and
+episode progress locally (mirrored to the account when there's a
+connection), and history through `src/lib/watchHistory.ts`, which queues
+entries it can't send and sends them when the connection is back.
+
+**ODM** (Windows): with it installed, the download menu can send a stream to
+ODM over its local named pipe (`\\.\pipe\odm-<user>`) instead —
+`ADD_STREAM` for HLS, `ADD_DOWNLOAD` for a file, with the player's headers
+and cookies (`electron/odm.js`, `src/lib/odmBridge.ts`).
+
+**Autoplay**: when *Up next* (or a picked episode) changes the episode, the
+app asks the main process to autoplay the next stream that loads within 30
+seconds; the bridge in the server's frame plays its `<video>`, or presses
+the server's play button when there's no video yet.
 
 **Watch parties** are live Supabase Realtime channels (`src/lib/watchRoom.ts`);
 nothing is stored. Presence carries only who's there, the title and the
@@ -248,7 +289,8 @@ composition, soundtrack) are in `brag-output/`, which isn't committed.
 
 ## Logs
 
-The bundled server logs to `server.log`, updates to `updates.log`, in the
+The bundled server logs to `server.log`, updates to `updates.log`,
+downloads to `downloads.log`, in the
 app's log folder: `~/Library/Logs/Lwedflix` on macOS, `%APPDATA%\Lwedflix\logs`
 on Windows, `~/.config/Lwedflix/logs` on Linux.
 

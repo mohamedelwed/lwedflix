@@ -1,0 +1,128 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { classify, responseSize, fileName, titleFor, Registry, qualityOf } from '../electron/streams.js';
+
+test('classify: HLS by extension and by MIME, regardless of size', () => {
+  assert.equal(classify('https://cdn.example/a/b.m3u8?token=1', undefined, undefined), 'hls');
+  assert.equal(classify('https://cdn.example/play?token=1', 'application/vnd.apple.mpegurl', undefined), 'hls');
+  assert.equal(classify('https://cdn.example/a.m3u8', 'text/plain', 10), 'hls');
+});
+
+test('classify: DASH is reported, not silently dropped', () => {
+  assert.equal(classify('https://cdn.example/a.mpd', undefined, undefined), 'dash');
+  assert.equal(classify('https://cdn.example/x', 'application/dash+xml', undefined), 'dash');
+});
+
+test('classify: a plain video file needs a video type or extension and 2 MiB', () => {
+  const url = 'https://cdn.example/a/b.mp4?sign=x&t=1';
+  assert.equal(classify(url, 'video/mp4', 3 * 1024 * 1024), 'file');
+  assert.equal(classify(url, 'video/mp4', 1024 * 1024), null);
+  assert.equal(classify(url, 'application/octet-stream', 3 * 1024 * 1024), 'file');
+  assert.equal(classify('https://cdn.example/file.bin', 'application/octet-stream', 9e9), null);
+  assert.equal(classify(url, 'image/jpeg', 9e9), null);
+});
+
+test('classify: segments, previews and YouTube never become a download', () => {
+  assert.equal(classify('https://cdn.example/seg-001.ts', 'video/mp2t', 9e9), null);
+  assert.equal(classify('https://cdn.example/a/seg_12.m4s', 'video/iso.segment', 9e9), null);
+  assert.equal(classify('https://cdn.example/seg12.mp4', 'video/mp4', 9e9), null);
+  assert.equal(classify('https://rr1.googlevideo.com/a.mp4', 'video/mp4', 9e9), null);
+  assert.equal(classify('not a url', 'video/mp4', 9e9), null);
+  // A proxy puts the real name in the query: still a segment, not a file.
+  const proxy = 'https://colourful.example/px.php?play=https%3A%2F%2Fup.example%2Fvd%2Fabc%2Fseg-1-s1080p-v';
+  assert.equal(classify(proxy, 'video/mp4', 4159171), null);
+  const init = 'https://colourful.example/px.php?play=https%3A%2F%2Fup.example%2Fvd%2Fabc%2Finit-s1080p-v1';
+  assert.equal(classify(init, 'video/mp4', 1210), null);
+  // …and its manifest is still HLS.
+  const manifest = 'https://colourful.example/px.php?play=https%3A%2F%2Fup.example%2Fvd%2Fabc%2Findex-s1080p';
+  assert.equal(classify(manifest, 'application/vnd.apple.mpegurl', 288771), 'hls');
+});
+
+test('responseSize: Content-Range total wins over Content-Length', () => {
+  assert.equal(responseSize('1024', 'bytes 0-1023/734003200'), 734003200);
+  assert.equal(responseSize('1024', undefined), 1024);
+  assert.equal(responseSize(undefined, 'bytes 0-1/*'), undefined);
+  assert.equal(responseSize('abc', undefined), undefined);
+});
+
+test('fileName: movie, episode, and hostile characters', () => {
+  const stream = { url: 'https://cdn.example/x.mp4?t=1', kind: 'file' };
+  assert.equal(fileName({ title: 'Fight Club' }, stream), 'Fight Club.mp4');
+  assert.equal(fileName({ title: 'Severance', type: 'tv', season: 2, episode: 7 }, stream), 'Severance - S02E07.mp4');
+  assert.equal(fileName({ title: 'A/B: "C"?' }, stream), 'AB C.mp4');
+  assert.equal(fileName({}, stream), 'Video.mp4');
+  assert.equal(fileName({ title: 'Film' }, { url: 'https://cdn.example/x.mkv', kind: 'file' }), 'Film.mkv');
+  assert.equal(fileName({ title: 'Film' }, { url: 'https://cdn.example/x.m3u8', kind: 'hls' }), 'Film.mp4');
+});
+
+test('titleFor: the title ODM names an HLS file from', () => {
+  assert.equal(titleFor({ title: 'Fight Club', type: 'movie' }), 'Fight Club');
+  assert.equal(titleFor({ title: 'Lupin', type: 'tv', season: 1, episode: 3 }), 'Lupin - S01E03');
+  assert.equal(titleFor({ title: 'Lupin', type: 'tv', season: 1 }), 'Lupin - S01E01');
+  assert.equal(titleFor({}), '');
+  assert.equal(titleFor(undefined), '');
+});
+
+test('Registry: keeps the newest per frame and filters by origin', () => {
+  const registry = new Registry();
+  const frame = 'https://vidlink.pro/movie/550';
+  registry.add({ frameUrl: frame, url: 'https://cdn.example/a.mp4', kind: 'file', size: 5e6 });
+  registry.add({ frameUrl: frame, url: 'https://cdn.example/b.m3u8', kind: 'hls' });
+  registry.add({ frameUrl: 'https://vidsrc.sh/embed/movie/550', url: 'https://cdn.example/c.mp4', kind: 'file', size: 6e6 });
+
+  const vidlink = registry.list(['https://vidlink.pro']);
+  assert.equal(vidlink.length, 2);
+  assert.ok(vidlink.every((s: { supported: boolean }) => s.supported));
+  assert.equal(registry.list(['https://vidlink.pro', 'https://player.videasy.to']).length, 2);
+  // Unknown origin falls back to everything captured.
+  assert.equal(registry.list(['https://unknown.example']).length, 3);
+  assert.equal(registry.list([]).length, 3);
+});
+
+test('Registry: a stream id resolves to the same entry', () => {
+  const registry = new Registry();
+  const added = registry.add({ frameUrl: 'https://vidlink.pro/x', url: 'https://cdn/a.mp4', kind: 'file', size: 3e6 });
+  assert.equal(registry.get(added.id).url, 'https://cdn/a.mp4');
+  assert.equal(registry.get('nope'), null);
+});
+
+test('Registry: a master hides its variants on the same host, not on others', () => {
+  const registry = new Registry();
+  const frame = 'https://cdn.example/e/1';
+  const media = registry.add({ frameUrl: frame, url: 'https://a.example/index.m3u8', kind: 'hls' });
+  const master = registry.add({ frameUrl: frame, url: 'https://a.example/master.m3u8', kind: 'hls' });
+  const otherHost = registry.add({ frameUrl: frame, url: 'https://b.example/index.m3u8', kind: 'hls' });
+  const ids = registry.list([]).map((s: { id: string }) => s.id);
+  assert.equal(ids[0], master.id);
+  assert.ok(!ids.includes(media.id), 'the variant is the same stream');
+  assert.ok(ids.includes(otherHost.id), 'a different host may be a different source');
+});
+
+test('Registry: the film comes first, an ad\'s short playlist and DASH last', () => {
+  const registry = new Registry();
+  const frame = 'https://vidcore.example/e/1';
+  registry.add({ frameUrl: frame, url: 'https://ads.example/preroll/index.m3u8', kind: 'hls', size: 3000 });
+  registry.add({ frameUrl: frame, url: 'https://cdn.example/px.php?play=x%2Findex-s1080p', kind: 'hls', size: 288771 });
+  registry.add({ frameUrl: frame, url: 'https://files.example/movie-720p.mp4', kind: 'file', size: 9e8 });
+  registry.add({ frameUrl: frame, url: 'https://dash.example/a.mpd', kind: 'dash' });
+  const listed = registry.list([]);
+  assert.deepEqual(listed.map((s: { title: string }) => s.title), ['Stream · 1080p', 'Video file · 720p', 'Stream', 'DASH stream']);
+  assert.deepEqual(listed.map((s: { best: boolean }) => s.best), [true, false, false, false]);
+  assert.equal(listed[1].detail, '858 MB · files.example');
+  assert.equal(listed[3].supported, false);
+});
+
+test('qualityOf: reads a resolution from the URL, even encoded', () => {
+  assert.equal(qualityOf('https://cdn.example/hls/1080p/index.m3u8'), '1080p');
+  assert.equal(qualityOf('https://cdn.example/px.php?play=abc%2Findex-s720p'), '720p');
+  assert.equal(qualityOf('https://cdn.example/1080/index.m3u8'), null);
+  assert.equal(qualityOf('https://cdn.example/a.m3u8'), null);
+});
+
+test('Registry: clear() forgets everything after the player navigates', () => {
+  const registry = new Registry();
+  registry.add({ frameUrl: 'https://a/x', url: 'https://cdn/a.mp4', kind: 'file', size: 3e6 });
+  assert.equal(registry.list([]).length, 1);
+  registry.clear();
+  assert.equal(registry.list([]).length, 0);
+});

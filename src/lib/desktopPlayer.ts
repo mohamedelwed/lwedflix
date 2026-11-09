@@ -98,6 +98,11 @@ export interface DesktopPlayer {
   onShortcut(callback: (shortcut: PlayerShortcut) => void): () => void;
   /** Dropped if no stream has reported yet. */
   command(command: PlayerCommand): void;
+  /**
+   * The next stream to load starts on its own (Up next): the bridge plays
+   * its <video>, pressing the server's play button if it needs one.
+   */
+  autoplay?(): void;
 }
 
 declare global {

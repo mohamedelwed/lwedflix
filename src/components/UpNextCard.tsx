@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Play, X } from 'lucide-react';
 import { usePlayerState } from '@/hooks/usePlayerState';
+import type { DesktopPlayer } from '@/lib/desktopPlayer';
 
 /** Shown this close to the end, or when the episode ends. */
 const SHOW_WITHIN_S = 20;
@@ -14,6 +15,8 @@ interface UpNextCardProps {
   /** The next episode's name, when known. */
   name?: string;
   onPlayNext: () => void;
+  /** Where playback is reported from, when it isn't the stream (a download). */
+  player?: DesktopPlayer | null;
 }
 
 /**
@@ -21,8 +24,8 @@ interface UpNextCardProps {
  * `key` per episode, so dismissing it only lasts for the episode at hand.
  * Lives in the player's overlay, so it's visible in fullscreen too.
  */
-const UpNextCard = ({ next, name, onPlayNext }: UpNextCardProps) => {
-  const state = usePlayerState();
+const UpNextCard = ({ next, name, onPlayNext, player }: UpNextCardProps) => {
+  const state = usePlayerState(player);
   const [dismissed, setDismissed] = useState(false);
   const [remaining, setRemaining] = useState(COUNTDOWN_S);
 

@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useSyncExternalStore } from 'react';
+import Link from 'next/link';
 import { WifiOff } from 'lucide-react';
+import { flushWatchHistory } from '@/lib/watchHistory';
 import AppSidebar from './AppSidebar';
 import AppToolbar from './AppToolbar';
 
@@ -22,6 +24,12 @@ const subscribeOnline = (onChange: () => void) => {
 const AppShell = ({ children }: { children: React.ReactNode }) => {
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
 
+  // History written while offline (downloads play without the internet)
+  // goes out once the connection is back.
+  useEffect(() => {
+    if (online) void flushWatchHistory();
+  }, [online]);
+
   return (
     <>
       <AppSidebar />
@@ -33,6 +41,9 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
         <div className="fixed top-14 left-[232px] right-0 z-30 flex items-center justify-center gap-2 px-6 py-2 bg-amber-500/15 border-b border-amber-500/25 backdrop-blur-xl text-[12px] text-amber-200">
           <WifiOff size={14} className="shrink-0" />
           <span>You&apos;re offline. Browsing and streaming need a connection — everything comes back when you reconnect.</span>
+          <Link href="/downloads" className="shrink-0 font-semibold text-amber-100 underline-offset-2 hover:underline">
+            Your downloads still play →
+          </Link>
         </div>
       )}
       <main className="flex-1 pl-[232px]">{children}</main>

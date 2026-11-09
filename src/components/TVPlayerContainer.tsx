@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams, usePathname } from 'next/navigation';
 import VideoPlayer from './VideoPlayer';
 import UpNextCard from './UpNextCard';
+import SeasonDownloadButton from './downloads/SeasonDownloadButton';
 import { useAuth } from './AuthProvider';
 import MovieCard from './MovieCard';
 import {
@@ -114,7 +115,11 @@ const TVPlayerContainer = ({ show }: TVPlayerContainerProps) => {
     window.history.replaceState(null, '', url);
   };
 
-  const selectEpisode = (season: number, episode: number) => {
+  // An episode picked here (or Up next's) starts on its own; the one the
+  // page opens on waits for play.
+  const [autoplay, setAutoplay] = useState(false);
+  const selectEpisode = (season: number, episode: number, play = true) => {
+    if (play) setAutoplay(true);
     setPosition({ season, episode });
     setLastPosition(show.id, season, episode);
     updateUrl(season, episode);
@@ -296,6 +301,8 @@ const TVPlayerContainer = ({ show }: TVPlayerContainerProps) => {
             resumeAt={resumeAt}
             onNext={nextEpisode ? goToNextEpisode : undefined}
             nextLabel={nextEpisode ? `S${nextEpisode.season} E${nextEpisode.episode}` : undefined}
+            episodeTitle={seasonEpisodes.find((e) => e.season_number === activeSeason && e.episode_number === activeEpisode)?.name}
+            autoplay={autoplay}
             overlay={
               nextEpisode && (
                 <UpNextCard
@@ -397,17 +404,26 @@ const TVPlayerContainer = ({ show }: TVPlayerContainerProps) => {
                   </div>
                   <h3 className="text-xl font-bold text-white">Episodes</h3>
                 </div>
-                <select
-                  value={activeSeason}
-                  onChange={(e) => selectEpisode(Number(e.target.value), 1)}
-                  className="bg-card border border-white/10 text-white text-sm rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none"
-                >
-                  {seasonsWithEpisodes.map((s: any) => (
-                    <option key={s.id} value={s.season_number}>
-                      Season {s.season_number}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  <SeasonDownloadButton
+                    showId={show.id}
+                    showTitle={show.name}
+                    posterPath={show.poster_path}
+                    season={activeSeason}
+                    seasons={seasonsWithEpisodes}
+                  />
+                  <select
+                    value={activeSeason}
+                    onChange={(e) => selectEpisode(Number(e.target.value), 1, false)}
+                    className="bg-card border border-white/10 text-white text-sm rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none"
+                  >
+                    {seasonsWithEpisodes.map((s: any) => (
+                      <option key={s.id} value={s.season_number}>
+                        Season {s.season_number}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Overall show progress */}

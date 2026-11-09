@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getDesktopPlayer, type PlayerState } from '@/lib/desktopPlayer';
+import { getDesktopPlayer, type DesktopPlayer, type PlayerState } from '@/lib/desktopPlayer';
 
 /**
  * The stream's latest report from the player bridge — about once a second
@@ -9,9 +9,10 @@ import { getDesktopPlayer, type PlayerState } from '@/lib/desktopPlayer';
  * stream loads, after it goes away, and outside the app.
  *
  * Re-renders its caller on every report, so use it in small components.
+ * `player` is another source of the same reports: a downloaded film's.
  */
-export function usePlayerState(): PlayerState | null {
+export function usePlayerState(player?: DesktopPlayer | null): PlayerState | null {
   const [state, setState] = useState<PlayerState | null>(null);
-  useEffect(() => getDesktopPlayer()?.onState(setState), []);
+  useEffect(() => (player ?? getDesktopPlayer())?.onState(setState), [player]);
   return state;
 }

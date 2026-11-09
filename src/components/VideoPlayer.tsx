@@ -4,11 +4,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, RefreshCw, Server, PlayCircle, Video as VideoIcon, Film, Tv, Play, Lightbulb, LightbulbOff, Rows2, Maximize, PictureInPicture2, SlidersHorizontal } from 'lucide-react';
 import PlayerControls from './PlayerControls';
-import OdmDownloadButton from './OdmDownloadButton';
+import DownloadButton from './DownloadButton';
 import { useControlsMode, setControlsMode } from '@/hooks/useControlsMode';
+import type { DownloadMeta } from '@/lib/downloads';
+import { recordWatch } from '@/lib/watchHistory';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './AuthProvider';
-import { supabase } from '@/lib/supabase';
 import { upsertNowWatching, clearNowWatching, HEARTBEAT_MS } from '@/lib/presence';
 import { getDesktopPlayer, type PlayerCommand } from '@/lib/desktopPlayer';
 import { formatTimestamp } from '@/lib/watchRoom';
@@ -40,6 +41,10 @@ interface VideoPlayerProps {
   onNext?: () => void;
   /** What's next, for that button's tooltip ("S1 E2"). */
   nextLabel?: string;
+  /** The episode's own title, for naming a download. */
+  episodeTitle?: string;
+  /** Start playing on its own once the stream loads (Up next, a picked episode). */
+  autoplay?: boolean;
 }
 
 interface Notice {
@@ -162,9 +167,22 @@ const VideoPlayer = ({
   overlay,
   onNext,
   nextLabel,
+  episodeTitle,
+  autoplay = false,
 }: VideoPlayerProps) => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
+  // What a download of this title is called and filed under.
+  const downloadMeta: DownloadMeta = {
+    title: title || 'Untitled',
+    mediaType: type,
+    mediaId: Number(id),
+    season: type === 'tv' ? season : undefined,
+    episode: type === 'tv' ? episode : undefined,
+    showTitle: type === 'tv' ? title : undefined,
+    episodeTitle,
+    posterPath,
+  };
   const [activeProvider, setActiveProvider] = useState(
     () => PROVIDERS.find((p) => p.name === preferredProvider) ?? PROVIDERS[0]
   );
@@ -268,13 +286,20 @@ const VideoPlayer = ({
   const primaryTrailer = videos.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube') || videos[0];
   const [currentTrailerKey, setCurrentTrailerKey] = useState<string | null>(primaryTrailer?.key || null);
 
+  // Asked for before the new episode (or server) loads, so the bridge
+  // knows to press play on it.
+  useEffect(() => {
+    if (autoplay) getDesktopPlayer()?.autoplay?.();
+  }, [autoplay, season, episode, activeProvider.url]);
+
   // Record History
   useEffect(() => {
     if (!user) return;
 
     const recordHistory = async () => {
       try {
-        await supabase.from('watch_history').upsert({
+        // Queued if the connection drops, and sent when it's back.
+        await recordWatch({
           user_id: user.id,
           movie_id: String(id),
           type: type,
@@ -283,7 +308,7 @@ const VideoPlayer = ({
           season: type === 'tv' ? season : null,
           episode: type === 'tv' ? episode : null,
           watched_at: new Date().toISOString(),
-        }, { onConflict: 'user_id, movie_id' });
+        });
       } catch (err) {
         console.error('History record error:', err);
       }
@@ -672,12 +697,9 @@ const VideoPlayer = ({
                     onStreamChange={setControllingStream}
                     extra={
                       <>
-                        <OdmDownloadButton
+                        <DownloadButton
                           origins={providerOrigins(activeProvider)}
-                          title={title}
-                          type={type}
-                          season={season}
-                          episode={episode}
+                          meta={downloadMeta}
                           triggerClassName={barButtonClass(false)}
                           activeTriggerClassName={barButtonClass(true)}
                           placement="above"
@@ -742,12 +764,9 @@ const VideoPlayer = ({
             {/* The app's controls carry all of these once they're up. */}
             {!ourControls && (
             <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-30">
-              <OdmDownloadButton
+              <DownloadButton
                 origins={providerOrigins(activeProvider)}
-                title={title}
-                type={type}
-                season={season}
-                episode={episode}
+                meta={downloadMeta}
                 triggerClassName="p-2 bg-black/60 backdrop-blur-md rounded-full text-white/70 hover:text-white transition-colors border border-white/10"
                 activeTriggerClassName="p-2 bg-accent/80 backdrop-blur-md rounded-full text-white transition-colors border border-accent"
                 placement="below"

@@ -10,6 +10,7 @@ import {
   Tv,
   Sparkles,
   MapIcon,
+  Download,
   Popcorn,
   Users,
   MessageCircle,
@@ -26,6 +27,7 @@ import LwedflixLogo from '@/components/LwedflixLogo';
 import FriendAvatar from '@/components/FriendAvatar';
 import { useNavBadges } from '@/hooks/useNavBadges';
 import { fetchProfiles, type PublicProfile } from '@/lib/friends';
+import { isActive as isDownloading, useDownloads } from '@/lib/downloads';
 
 interface NavItem {
   label: string;
@@ -41,6 +43,8 @@ const AppSidebar = () => {
   const pathname = usePathname();
   const { user, isAdmin, signOut } = useAuth();
   const { pendingRequests, unreadDms } = useNavBadges(user);
+  const { available: canDownload, downloads } = useDownloads();
+  const downloading = downloads.filter(isDownloading).length;
 
   const sections: { title: string; items: NavItem[] }[] = [
     {
@@ -69,6 +73,7 @@ const AppSidebar = () => {
       items: [
         { label: 'Watchlist', href: '/watchlist', icon: Bookmark },
         { label: 'History', href: '/history', icon: History },
+        ...(canDownload ? [{ label: 'Downloads', href: '/downloads', icon: Download, match: /^\/downloads\//, badge: downloading }] : []),
         ...(isAdmin ? [{ label: 'Moderation', href: '/admin', icon: ShieldCheck }] : []),
       ],
     },

@@ -35,8 +35,8 @@ interface PlayerControlsProps {
   /** Shown as a "next episode" button when given. */
   onNext?: () => void;
   nextLabel?: string;
-  /** Hands the player back to the server's own controls. */
-  onUseServerControls: () => void;
+  /** Hands the player back to the server's own controls; without it, that option isn't offered. */
+  onUseServerControls?: () => void;
   /** Called with whether a stream is under these controls. */
   onStreamChange?: (streaming: boolean) => void;
   /** More buttons for the right of the bar. */
@@ -365,17 +365,21 @@ const PlayerControls = ({
                 </button>
               ))}
             </div>
-            <div className="h-px bg-white/10 my-1" />
-            <button
-              onClick={() => {
-                setMenu(null);
-                onUseServerControls();
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 transition-colors"
-            >
-              <span className="block text-xs font-bold text-white">Use the server&apos;s controls</span>
-              <span className="block text-[11px] text-white/45">For its own subtitles, quality and audio menus</span>
-            </button>
+            {onUseServerControls && (
+              <>
+                <div className="h-px bg-white/10 my-1" />
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    onUseServerControls();
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <span className="block text-xs font-bold text-white">Use the server&apos;s controls</span>
+                  <span className="block text-[11px] text-white/45">For its own subtitles, quality and audio menus</span>
+                </button>
+              </>
+            )}
           </Menu>
 
           <BarButton label="Mini player (P)" onClick={() => player.command({ action: 'pip' })}>

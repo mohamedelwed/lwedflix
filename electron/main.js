@@ -6,11 +6,14 @@
 // process bound to 127.0.0.1, and the window loads it once the intro has
 // played.
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, net: electronNet, screen, session, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net: electronNet, protocol, screen, session, shell, utilityProcess } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { installAdBlock } = require('./adblock');
 const { cleanState, cleanCommand } = require('./playerProtocol');
 const { createMacUpdater } = require('./macUpdater');
+const { captureStreams } = require('./streams');
+const { setupDownloads, SCHEME: MEDIA_SCHEME } = require('./downloads');
+const { createResolver } = require('./resolver');
 const { setupOdm } = require('./odm');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -59,6 +62,18 @@ let quitting = false;
 let pendingPath = null;
 // The embedded frame whose <video> the player bridge last reported.
 let playerFrame = null;
+let downloads = null;
+// Until when a newly loaded stream should start on its own (Up next).
+let autoplayUntil = 0;
+// Set once the person has agreed to quit with downloads still running.
+let quitWithDownloads = false;
+
+// Downloaded films play from lwedflix-media:// (electron/downloads.js).
+// Privileged, or <video> couldn't stream or seek it; registered before the
+// app is ready, as Electron requires.
+protocol.registerSchemesAsPrivileged([
+  { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+]);
 
 // Players reached through the app shouldn't see an Electron user agent; some
 // treat it as a bot. The app's own token (package name) goes too.
@@ -162,6 +177,7 @@ async function start() {
     }
     const clean = cleanState(state);
     if (!clean) return;
+    if (clean.playing) autoplayUntil = 0;
     playerFrame = frame;
     mainWindow.webContents.send('player:state', clean);
   });
@@ -186,18 +202,47 @@ async function start() {
     if (fromPlayerFrame(event) && key === 'f') mainWindow.webContents.send('player:shortcut', { key });
   });
 
+  // Up next: the next stream that loads starts on its own. Only for a
+  // short while, so frames loading later (ads, another title) don't, and
+  // over once a stream plays.
+  ipcMain.on('player:autoplay', (event) => {
+    if (isFromAppPage(event)) autoplayUntil = Date.now() + 30000;
+  });
+  ipcMain.handle('player:should-autoplay', (event) => fromPlayerFrame(event) && Date.now() < autoplayUntil);
+
   createWindow();
 
-  // Watches what the embedded players play and forwards a chosen stream to ODM.
-  // ODM is a Windows app, so the button does not exist anywhere else.
+  // What the embedded players play, for the player's Download button: saved
+  // by Lwedflix itself everywhere, or handed to ODM on Windows when it's there.
+  const ses = session.defaultSession;
+  const streams = captureStreams({ ses, webContents: mainWindow.webContents });
+  fs.mkdirSync(app.getPath('logs'), { recursive: true });
+  const downloadLog = fs.createWriteStream(path.join(app.getPath('logs'), 'downloads.log'), { flags: 'a' });
+  // Downloading a whole season: each episode's stream is found when its
+  // turn comes, by a hidden player in a session of its own.
+  const resolverSession = session.fromPartition('lwedflix-resolver');
+  installAdBlock(resolverSession);
+  resolverSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  const resolver = createResolver({
+    BrowserWindow,
+    ses: resolverSession,
+    wrapperUrl: (src) => `${appOrigin}/api/player-frame?src=${encodeURIComponent(src)}`,
+    log: (line) => downloadLog.write(`${new Date().toISOString()} ${line}\n`),
+  });
+  downloads = setupDownloads({
+    resolver,
+    ipcMain,
+    isFromAppPage,
+    streams,
+    ses,
+    webContents: mainWindow.webContents,
+    shell,
+    downloadsDir: path.join(app.getPath('downloads'), 'Lwedflix'),
+    stateDir: path.join(app.getPath('userData'), 'downloads'),
+    log: (line) => downloadLog.write(`${new Date().toISOString()} ${line}\n`),
+  });
   if (process.platform === 'win32') {
-    setupOdm({
-      ses: session.defaultSession,
-      ipcMain,
-      isFromAppPage,
-      webContents: mainWindow.webContents,
-      openExternal: (url) => shell.openExternal(url),
-    });
+    setupOdm({ ses, ipcMain, isFromAppPage, streams, openExternal: (url) => shell.openExternal(url) });
   }
   setUpUpdates();
 
@@ -252,8 +297,16 @@ function createWindow() {
   // Keep the product name in the title bar rather than each page's <title>.
   mainWindow.on('page-title-updated', (event) => event.preventDefault());
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Running downloads are asked about before the window goes (closing it
+  // quits the app).
+  mainWindow.on('close', (event) => {
+    if (!mayStopDownloads()) event.preventDefault();
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Downloads' hidden helper windows (resolver.js) would otherwise keep
+    // the app running with nothing on screen.
+    app.quit();
   });
 
   // Embedded players love popups and top-frame redirects to ad pages. The
@@ -614,7 +667,31 @@ function buildMenu() {
 }
 
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {
+/**
+ * A download from the player can't be picked up later (its stream's URLs
+ * expire), so quitting in the middle of one is asked about first. True when
+ * quitting may go ahead.
+ */
+function mayStopDownloads() {
+  const running = downloads?.activeCount() ?? 0;
+  if (running === 0 || quitWithDownloads) return true;
+  const choice = dialog.showMessageBoxSync(mainWindow ?? undefined, {
+    type: 'question',
+    buttons: ['Keep Downloading', 'Quit'],
+    defaultId: 0,
+    cancelId: 0,
+    message: running === 1 ? 'A download is still running' : `${running} downloads are still running`,
+    detail: 'Quitting stops them. Episodes queued from a season carry on next time; anything else has to be started again from the player.',
+  });
+  quitWithDownloads = choice === 1;
+  return quitWithDownloads;
+}
+
+app.on('before-quit', (event) => {
+  if (!mayStopDownloads()) {
+    event.preventDefault();
+    return;
+  }
   quitting = true;
 });
 app.on('will-quit', () => serverProcess?.kill());

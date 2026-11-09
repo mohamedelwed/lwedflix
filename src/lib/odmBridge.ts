@@ -1,36 +1,11 @@
 /**
- * The ODM bridge (electron/preload.js + electron/odm.js).
+ * The ODM bridge (electron/preload.js + electron/odm.js), Windows only.
  *
- * Lwedflix plays through third-party iframes, so the page never sees a media
- * URL. The main process watches the session's media traffic instead, and this
- * is the typed way the player asks it what it saw and sends a choice to ODM.
- *
- * Only exists inside the app: under `npm run dev` in a browser
- * `window.lwedflixOdm` is missing and the download button stays hidden.
+ * ODM is a download manager; with it installed, the player's Download menu
+ * can hand a stream to it instead of downloading it in Lwedflix. The streams
+ * themselves come from the downloads bridge (src/lib/downloads.ts). Outside
+ * the Windows app `window.lwedflixOdm` is missing and the option isn't shown.
  */
-
-export type OdmStreamKind = 'hls' | 'dash' | 'file';
-
-export interface OdmStream {
-  id: string;
-  kind: OdmStreamKind;
-  /** `<last path segment> · <size> · <host>`, for telling rows apart. */
-  label: string;
-  /** What it is, for people: "Stream · 1080p", "Video file", "DASH stream". */
-  title: string;
-  /** Size (files only) and host. */
-  detail: string;
-  /** The resolution the URL names, if any. */
-  quality: string | null;
-  /** The one most likely to be the film itself (listed first). */
-  best: boolean;
-  size?: number;
-  host: string;
-  /** How long ago it was captured; signed URLs go stale. */
-  ageMs: number;
-  /** DASH is listed but ODM cannot download it yet. */
-  supported: boolean;
-}
 
 export interface OdmDownloadMeta {
   title?: string;
@@ -51,14 +26,10 @@ export interface OdmStatus {
 }
 
 export interface OdmBridge {
-  /** Pings ODM's pipe; false when it is closed. */
-  available(): Promise<boolean>;
-  /** Installed vs running — a missing install gets the website, not an error. */
   status(): Promise<OdmStatus>;
   /** Opens ODM's download page in the system browser. */
   openSite(): Promise<{ ok: boolean }>;
-  /** Captured streams belonging to the given provider origins. */
-  streams(origins: string[]): Promise<OdmStream[]>;
+  /** Sends a captured stream (by its id from the downloads bridge) to ODM. */
   download(id: string, meta: OdmDownloadMeta): Promise<OdmResult>;
 }
 

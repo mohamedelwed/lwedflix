@@ -28,6 +28,12 @@ export function getMovieResume(movieId: string | number): number | undefined {
   return saved.watched;
 }
 
+/** How far through a movie is, 0–1, or undefined when it hasn't been started. */
+export function getMovieFraction(movieId: string | number): number | undefined {
+  const saved = readAll()[String(movieId)];
+  return saved && saved.duration > 0 ? Math.min(1, saved.watched / saved.duration) : undefined;
+}
+
 /** Called about once a second while playing; writes at most every 5s of change. */
 export function setMovieProgress(movieId: string | number, watched: number, duration: number) {
   if (!(duration > 0) || !(watched >= 0)) return;

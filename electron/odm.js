@@ -43,6 +43,10 @@ const VIDEO_TYPES = new Set([
   'video/ogg',
 ]);
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.m4v'];
+// A feature's media playlist runs to 100 KB and more; a pre-roll ad's is a
+// few KB. Only a hint for ordering: a master playlist is small too.
+const SHORT_PLAYLIST_BYTES = 16 * 1024;
+const QUALITY = /(?:^|[^\d])(4320|2160|1440|1080|720|576|480|360|240)p/i;
 const SEGMENT_EXTENSIONS = ['.m4s', '.ts', '.m4f', '.cmfv', '.cmfa'];
 
 // Header lookups are case-insensitive on the way in (Chromium sends lower-case
@@ -129,6 +133,46 @@ function streamLabel(url, size) {
   }
 }
 
+/** "1080p" when the URL names a resolution (`index-s1080p`, `/720p/`). */
+function qualityOf(url) {
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {
+    // keep the raw URL
+  }
+  const match = decoded.match(QUALITY);
+  return match ? `${match[1]}p` : null;
+}
+
+const isMaster = (item) => item.kind === 'hls' && /master/i.test(item.url);
+
+/**
+ * Most likely to be the film first: a master playlist (ODM picks the best
+ * variant), then media playlists by size (an ad's is short), then files by
+ * size, then DASH, which ODM can't download yet.
+ */
+function rank(item) {
+  if (isMaster(item)) return 0;
+  if (item.kind === 'hls') return item.size !== undefined && item.size < SHORT_PLAYLIST_BYTES ? 3 : 1;
+  if (item.kind === 'file') return 2;
+  return 4;
+}
+
+/** What the menu shows for a stream: what it is, then where it's from. */
+function describe(item) {
+  const quality = qualityOf(item.url);
+  const title = isMaster(item)
+    ? 'Stream · every quality'
+    : item.kind === 'hls'
+      ? `Stream${quality ? ` · ${quality}` : ''}`
+      : item.kind === 'file'
+        ? `Video file${quality ? ` · ${quality}` : ''}`
+        : 'DASH stream';
+  const detail = [item.kind === 'file' ? formatBytes(item.size) : '', item.host].filter(Boolean).join(' · ');
+  return { title, detail, quality };
+}
+
 function extensionOf(url) {
   const pathname = pathOf(url);
   if (!pathname) return undefined;
@@ -164,6 +208,9 @@ class Registry {
     this.frames = new Map();
   }
 
+  /**
+   * @param {{ frameUrl?: string | null, url: string, kind: string, size?: number, mime?: string, requestHeaders?: Record<string, string> }} stream
+   */
   add({ frameUrl, url, kind, size, mime, requestHeaders }) {
     const key = frameUrl || '';
     const now = Date.now();
@@ -249,25 +296,25 @@ class Registry {
     // A master playlist and the media playlists it names are one stream. When
     // both were captured, keep the master (ODM picks the best variant from it)
     // and hide the variants, so the menu does not offer duplicates.
-    const masterHosts = new Set(
-      pool.filter((item) => item.kind === 'hls' && /master/i.test(item.url)).map((item) => item.host),
-    );
+    const masterHosts = new Set(pool.filter(isMaster).map((item) => item.host));
     const distinct = pool.filter(
-      (item) => !(item.kind === 'hls' && !/master/i.test(item.url) && masterHosts.has(item.host)),
+      (item) => !(item.kind === 'hls' && !isMaster(item) && masterHosts.has(item.host)),
     );
-    const rank = (item) => (item.kind === 'hls' && /master/i.test(item.url) ? 0 : 1);
-    return distinct
-      .sort((a, b) => rank(a) - rank(b) || b.capturedAt - a.capturedAt)
-      .slice(0, 12)
-      .map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        label: item.label,
-        size: item.size,
-        host: item.host,
-        ageMs: Date.now() - item.capturedAt,
-        supported: item.kind !== 'dash',
-      }));
+    const listed = distinct
+      .sort((a, b) => rank(a) - rank(b) || (b.size ?? 0) - (a.size ?? 0) || b.capturedAt - a.capturedAt)
+      .slice(0, 12);
+    const best = listed.find((item) => item.kind !== 'dash');
+    return listed.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      label: item.label,
+      ...describe(item),
+      size: item.size,
+      host: item.host,
+      ageMs: Date.now() - item.capturedAt,
+      supported: item.kind !== 'dash',
+      best: item === best,
+    }));
   }
 
   get(id) {
@@ -429,21 +476,26 @@ function setupOdm({ ses, ipcMain, isFromAppPage, webContents, openExternal }) {
 
   // No `types` filter: the filter enum has no `other`, and some players fetch
   // media as `other`. Classification drops everything irrelevant.
-  ses.webRequest.onBeforeSendHeaders(
+  //
+  // Both listeners only observe. The blocking events (onBeforeSendHeaders,
+  // onHeadersReceived) would hold every request in the session for a round
+  // trip to this process, and Electron keeps one listener per event, so they
+  // would also fight any other code that needs them.
+  ses.webRequest.onSendHeaders(
     { urls: ['<all_urls>'] },
-    (details, callback) => {
+    (details) => {
       const picked = pickRequestHeaders(details.requestHeaders);
       if (Object.keys(picked).length > 0) {
         if (sent.size > 400) sent.clear();
         sent.set(details.url, picked);
       }
-      callback({ requestHeaders: details.requestHeaders });
     },
   );
 
-  ses.webRequest.onHeadersReceived(
+  ses.webRequest.onResponseStarted(
     { urls: ['<all_urls>'] },
-    (details, callback) => {
+    (details) => {
+      if (details.statusCode >= 400) return;
       const size = responseSize(
         header(details.responseHeaders, 'content-length'),
         header(details.responseHeaders, 'content-range'),
@@ -463,11 +515,10 @@ function setupOdm({ ses, ipcMain, isFromAppPage, webContents, openExternal }) {
           requestHeaders: sent.get(details.url) ?? {},
         });
       }
-      callback({ responseHeaders: details.responseHeaders });
     },
   );
 
-  ipcMain.handle('odm:available', () => isRunning());
+  ipcMain.handle('odm:available', (event) => (isFromAppPage(event) ? isRunning() : false));
 
   // Installed is different from running: without it, the menu offers the site
   // instead of a download that could never start.
@@ -552,5 +603,5 @@ function setupOdm({ ses, ipcMain, isFromAppPage, webContents, openExternal }) {
 module.exports = { setupOdm, classify, responseSize, fileName, titleFor, isInstalled, ODM_SITE };
 
 // Reachable for the tests in `npm run test:odm`; not part of the app's API.
-module.exports.__test = { Registry, ask, ensureRunning, pipeName, pickRequestHeaders, odmExecutable };
+module.exports.__test = { Registry, ask, ensureRunning, pipeName, pickRequestHeaders, odmExecutable, qualityOf };
 

@@ -25,6 +25,8 @@ for macOS, Windows and Linux.
   F fullscreen, P mini player (picture-in-picture).
 - The players' ad and tracker requests are blocked, and so are the
   "downloads" their ads push.
+- On Windows, *Download* in the player hands the stream that's playing to
+  [ODM](https://salimos.cc/odm), a download manager (see below).
 - **Watch parties**: start one from any title and share the code or a
   `lwedflix://watch/<CODE>` link. No account needed. Play, pause and seek in
   anyone's player move everyone's — or only the host's, if the host locks
@@ -50,6 +52,7 @@ electron/
   preload.js       the bridges: intro, app, and the player bridge
   playerProtocol.js  what may cross the player bridge (states in, commands out)
   adblock.js       ad/tracker blocklist and download blocking
+  odm.js           Windows: send the playing stream to ODM
   macUpdater.js    self-updating on macOS without an Apple Developer ID
   intro/           the launch animation
 scripts/           build-server.mjs, make-icon.mjs, release.mjs
@@ -69,6 +72,22 @@ mode), which is what lets the app draw its own controls over it. Watch
 parties sync through it (`src/lib/partySync.ts`), and progress, resume,
 *Up next*, shortcuts, the mini player and automatic server switching work on
 every server because of it.
+
+**Downloads (Windows, with ODM)** — contributed by Salim May. The players
+are third-party frames, so the app never gets a media URL from them;
+`electron/odm.js` watches the session's responses instead (observe-only
+webRequest events), keeps the recent HLS playlists and video files per
+player frame, and sends the chosen one over ODM's local named pipe
+(`\\.\pipe\odm-<user>`): `ADD_STREAM` for HLS, `ADD_DOWNLOAD` for a file,
+with the player's Referer, Origin, User-Agent and cookies, because the URLs
+are signed and short-lived. The menu lists the likeliest stream first (a
+master playlist, then media playlists by size — an ad's is short — then
+files); DASH (vidlink) is listed but disabled, as ODM can't download it
+yet. Switching server or episode clears the list, episodes are named
+`Show - S01E03`, a closed ODM is started in the tray, and without ODM the
+menu links to its site. The bridge (`window.lwedflixOdm`,
+`src/lib/odmBridge.ts`) exists only on Windows and only answers the app's
+own page.
 
 **Watch parties** are live Supabase Realtime channels (`src/lib/watchRoom.ts`);
 nothing is stored. Presence carries only who's there, the title and the

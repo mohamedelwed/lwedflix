@@ -16,6 +16,14 @@ export interface OdmStream {
   kind: OdmStreamKind;
   /** `<last path segment> · <size> · <host>`, for telling rows apart. */
   label: string;
+  /** What it is, for people: "Stream · 1080p", "Video file", "DASH stream". */
+  title: string;
+  /** Size (files only) and host. */
+  detail: string;
+  /** The resolution the URL names, if any. */
+  quality: string | null;
+  /** The one most likely to be the film itself (listed first). */
+  best: boolean;
   size?: number;
   host: string;
   /** How long ago it was captured; signed URLs go stale. */

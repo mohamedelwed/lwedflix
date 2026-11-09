@@ -7,6 +7,12 @@ for macOS, Windows and Linux.
   choice of servers. A server that says it doesn't have the title, or whose
   play button doesn't start anything within 20 seconds, is swapped for the
   next one automatically.
+- **Movie Map** (Discover in the sidebar): about 35,000 films on one map,
+  each next to the films most like it. Search flies to a film or lights up a
+  theme ("heist", "time travel"); genres, language, decade and *My films*
+  (your watchlist and history) dim everything else. Click a film for its
+  closest neighbours, and every movie page has *Find similar* to open the
+  map on it.
 - Movies and episodes resume where you stopped; at the end of an episode,
   *Up next* counts down to the next one (across seasons too).
 - Lwedflix's own player controls on every server: once a stream plays, the
@@ -47,6 +53,7 @@ electron/
   macUpdater.js    self-updating on macOS without an Apple Developer ID
   intro/           the launch animation
 scripts/           build-server.mjs, make-icon.mjs, release.mjs
+  movie-map/       fetch.mjs and build.mjs: the Movie Map's data
 tests/             unit tests (node:test); tests/e2e: harnesses run in Electron
 .github/workflows  CI, and the release build
 build/icon.png     app icon (electron-builder derives .icns/.ico from it)
@@ -70,6 +77,24 @@ Broadcast, because Realtime closes the channel of a client that sends more
 than 5 Presence updates in 30 seconds. Presence updates are coalesced to one
 every 6.5 seconds, and each carries a revision, since Realtime keeps every
 presence a client has sent rather than only the latest.
+
+**The Movie Map** is drawn from `public/movie-map/map.json`, made offline
+and committed:
+
+- `scripts/movie-map/fetch.mjs` downloads every film with at least 50 TMDB
+  votes and a 40-minute runtime (genres, keywords, cast, crew, franchise)
+  into `.cache/movie-map/` (not committed). It takes about 20 minutes and
+  resumes if stopped.
+- `scripts/movie-map/build.mjs` turns each film into a weighted vector,
+  finds its closest films (PCA candidates plus anything sharing a franchise,
+  person or rare keyword, re-ranked exactly; suggestions much less known
+  than the film are pushed down), lays the neighbour graph out with UMAP,
+  splits the map into named regions with k-means, and writes the JSON
+  (about a minute).
+
+`npm run movie-map` runs both. To bring in new films, delete
+`.cache/movie-map/ids.json` (the list of films that qualify) and run it
+again: films already downloaded are kept.
 
 ## Setup
 

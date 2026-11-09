@@ -13,6 +13,7 @@
     "start": "electron .",
     "build:server": "node scripts/build-server.mjs",
     "icon": "node scripts/make-icon.mjs",
+    "movie-map": "node scripts/movie-map/fetch.mjs && node scripts/movie-map/build.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.ts\"",
@@ -45,7 +46,8 @@
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "umap-js": "1.4.0"
   },
   "build": {
     "appId": "app.lwedflix.desktop",

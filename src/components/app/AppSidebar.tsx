@@ -9,6 +9,7 @@ import {
   Film,
   Tv,
   Sparkles,
+  MapIcon,
   Popcorn,
   Users,
   MessageCircle,
@@ -50,6 +51,10 @@ const AppSidebar = () => {
         { label: 'TV Shows', href: '/tv', icon: Tv, match: /^\/tv\// },
         { label: 'Anime', href: '/anime', icon: Sparkles },
       ],
+    },
+    {
+      title: 'Discover',
+      items: [{ label: 'Movie Map', href: '/map', icon: MapIcon }],
     },
     {
       title: 'Together',

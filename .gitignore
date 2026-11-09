@@ -27,3 +27,6 @@ npm-debug.log*
 
 # launch videos (/brag-slim)
 /brag-output*/
+
+# movie map: TMDB downloads (scripts/movie-map)
+/.cache/

@@ -6,7 +6,7 @@ import { getImageUrl } from '@/lib/imageUrl';
 import MoviePlayer from '@/components/MoviePlayer';
 import MovieCard from '@/components/MovieCard';
 import FranchiseRow from '@/components/FranchiseRow';
-import { Star, Clock, Calendar, Users, Bookmark, Play, Layers } from 'lucide-react';
+import { Star, Clock, Calendar, Users, Bookmark, Play, Layers, MapIcon } from 'lucide-react';
 import WatchlistButton from '@/components/WatchlistButton';
 import RecommendButton from '@/components/RecommendButton';
 import ShareTitleButton from '@/components/ShareTitleButton';
@@ -93,6 +93,13 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
                       title={movie.title}
                       posterPath={movie.poster_path}
                     />
+                    <Link
+                      href={`/map?film=${movie.id}`}
+                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/5 border border-white/10 text-white text-sm font-bold hover:bg-white/10 transition-all"
+                    >
+                      <MapIcon size={16} />
+                      <span>Find similar</span>
+                    </Link>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-4 text-sm font-medium text-muted">

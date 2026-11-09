@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { DesktopPlayer, PlayerState } from '@/lib/desktopPlayer';
 import { formatTimestamp } from '@/lib/watchRoom';
+import { useIsTv } from '@/lib/tv';
 
 /** Controls fade after this long without the mouse moving (while playing). */
 const HIDE_AFTER_MS = 2500;
@@ -153,6 +154,10 @@ const PlayerControls = ({
     setMenuState(next);
   };
   const [overBar, setOverBar] = useState(false);
+  // On a TV the bar is reached with the remote's arrows: it stays up while
+  // one of its buttons has focus.
+  const [focusInBar, setFocusInBar] = useState(false);
+  const tv = useIsTv();
   const [scrubbing, setScrubbing] = useState(false);
 
   const [fullscreen, setFullscreen] = useState(false);
@@ -168,7 +173,7 @@ const PlayerControls = ({
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(clickTimer.current), []);
 
-  const visible = !state?.playing || recentlyMoved || overBar || menu !== null || scrubbing;
+  const visible = !state?.playing || recentlyMoved || overBar || focusInBar || menu !== null || scrubbing;
 
   // Subtitles sit at the bottom of the picture, right where the bar is: they
   // move up while it shows. (The player's frame is the same size as this
@@ -276,6 +281,10 @@ const PlayerControls = ({
         // Buttons here shouldn't keep keyboard focus: Space and the arrows
         // belong to the player.
         onMouseDown={(e) => e.preventDefault()}
+        onFocus={() => setFocusInBar(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusInBar(false);
+        }}
       >
         <div ref={barRef}>
         {duration > 0 && (
@@ -289,7 +298,7 @@ const PlayerControls = ({
         )}
 
         <div className="mt-2 flex items-center gap-1 text-white">
-          <BarButton label={state.playing ? 'Pause (Space)' : 'Play (Space)'} onClick={togglePlay}>
+          <BarButton label={state.playing ? 'Pause (Space)' : 'Play (Space)'} onClick={togglePlay} primary>
             {state.playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
           </BarButton>
           <BarButton label="Back 10 seconds (←)" onClick={() => seek(time - 10)}>
@@ -382,9 +391,11 @@ const PlayerControls = ({
             )}
           </Menu>
 
-          <BarButton label="Mini player (P)" onClick={() => player.command({ action: 'pip' })}>
-            <PictureInPicture2 size={19} />
-          </BarButton>
+          {!tv && (
+            <BarButton label="Mini player (P)" onClick={() => player.command({ action: 'pip' })}>
+              <PictureInPicture2 size={19} />
+            </BarButton>
+          )}
           <BarButton label={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'} onClick={onToggleFullscreen}>
             {fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}
           </BarButton>
@@ -395,9 +406,21 @@ const PlayerControls = ({
   );
 };
 
-const BarButton = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
+const BarButton = ({
+  label,
+  onClick,
+  primary,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  /** Where the TV remote lands first in the bar. */
+  primary?: boolean;
+  children: React.ReactNode;
+}) => (
   <button
     onClick={onClick}
+    data-tv-primary={primary ? '' : undefined}
     title={label}
     aria-label={label}
     className="p-2 rounded-lg text-white/85 hover:text-white hover:bg-white/10 active:scale-95 transition-all"

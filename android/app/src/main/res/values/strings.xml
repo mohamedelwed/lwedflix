@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lwedflix</string>
+    <string name="offline_title">Can\'t reach Lwedflix</string>
+    <string name="offline_body">Check that the TV is connected to the internet, then try again.</string>
+    <string name="retry">Try again</string>
+    <string name="webview_too_old">This TV\'s Android System WebView is too old for Lwedflix. Update it from the Play Store (search for \"Android System WebView\"), then open Lwedflix again.</string>
+</resources>

@@ -6,6 +6,7 @@ import { Search, X } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import NotificationBell from '@/components/NotificationBell';
 import HistoryButtons from '@/components/HistoryButtons';
+import { useIsTv } from '@/lib/tv';
 
 const noSubscribe = () => () => {};
 const isMac = () => /Mac/i.test(navigator.platform);
@@ -22,6 +23,8 @@ const AppToolbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const mac = useSyncExternalStore(noSubscribe, isMac, () => null);
+  // No keyboard shortcut to advertise on a TV remote.
+  const tv = useIsTv();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -88,7 +91,7 @@ const AppToolbar = () => {
             <X size={14} />
           </button>
         ) : (
-          mac !== null && (
+          mac !== null && !tv && (
             <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md border border-white/10 bg-white/[0.04] text-[10px] font-sans text-white/35">
               {mac ? '⌘K' : 'Ctrl K'}
             </kbd>

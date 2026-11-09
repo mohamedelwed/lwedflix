@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import DockBar from "@/components/DockBar";
 import AppShell from "@/components/app/AppShell";
+import TvNavigation from "@/components/tv/TvNavigation";
 import { AuthProvider } from "@/components/AuthProvider";
 import { WatchlistProvider } from "@/components/WatchlistProvider";
 
@@ -44,6 +45,8 @@ export default function RootLayout({
                 out or when nobody is watching, so it never occupies a
                 corner of every page for no reason. */}
             <DockBar />
+            {/* Remote-control navigation; only in the TV app. */}
+            <TvNavigation />
           </WatchlistProvider>
         </AuthProvider>
       </body>

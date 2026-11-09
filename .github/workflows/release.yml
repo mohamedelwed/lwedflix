@@ -53,7 +53,9 @@ jobs:
   build:
     needs: draft
     strategy:
-      fail-fast: true
+      # One platform failing doesn't cancel the others: "Re-run failed jobs"
+      # then rebuilds only that one. publish still waits for all three.
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -78,10 +80,21 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:server
-      # Uploads into the draft above (package.json → build.publish).
-      - run: npx electron-builder ${{ matrix.platform }} --publish always
+      # Uploads into the draft above (package.json → build.publish). Up to
+      # three tries: electron-builder downloads its helper tools from GitHub,
+      # and those downloads fail now and then (504 Gateway Time-out). Retrying
+      # is safe, since electron-builder replaces assets already in a draft.
+      - name: Build and upload the installers
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for attempt in 1 2 3; do
+            npx electron-builder ${{ matrix.platform }} --publish always && exit 0
+            [ "$attempt" = 3 ] && exit 1
+            echo "::warning::electron-builder failed (attempt $attempt of 3), trying again"
+            sleep $((attempt * 30))
+          done
 
   publish:
     needs: [draft, build]

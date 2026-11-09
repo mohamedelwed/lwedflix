@@ -1,0 +1,103 @@
+# Builds the Google TV / Android TV app (android/) as an APK.
+#
+# Runs on changes to the app or to the desktop files it reuses (the player
+# bridge and ad blocking), and from the Release workflow, which attaches the
+# APK to the release alongside the desktop installers.
+#
+# Settings → Secrets and variables → Actions:
+#   variable LWEDFLIX_TV_URL   where the web app is hosted (default
+#                              https://lwedflix.vercel.app)
+#   secret   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+#            ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#                              the signing key (android/README.md says how to
+#                              make one). Without them the APK is signed with
+#                              a throwaway debug key and every build has to be
+#                              uninstalled before the next can be installed.
+name: Android TV
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'electron/preload.js'
+      - 'electron/playerProtocol.js'
+      - 'electron/adblock.js'
+      - '.github/workflows/android.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'electron/preload.js'
+      - 'electron/playerProtocol.js'
+      - 'electron/adblock.js'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Release to attach the APK to
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      LWEDFLIX_TV_URL: ${{ vars.LWEDFLIX_TV_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: this APK is signed with a throwaway debug key, so it won't install over a previous build."
+          fi
+
+      - name: Build
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Name the APK
+        id: apk
+        run: |
+          version=$(node -p "require('./package.json').version")
+          file="Lwedflix-TV-$version.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: ${{ steps.apk.outputs.file }}
+
+      - name: Attach to the release
+        if: inputs.release-tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release-tag }}
+          FILE: ${{ steps.apk.outputs.file }}
+        run: gh release upload "$TAG" "$FILE" --clobber

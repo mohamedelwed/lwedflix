@@ -627,6 +627,8 @@ const VideoPlayer = ({
           {lightsOff && (
             <div
               className="fixed inset-0 z-[9990] bg-black/70 backdrop-blur-2xl cursor-pointer"
+              // Back on a TV remote leaves lights-off mode, as Escape does.
+              data-tv-escape=""
               onClick={() => {
                 setLightsOff(false);
                 setGenZMode(false);

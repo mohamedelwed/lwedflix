@@ -70,3 +70,16 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* The TV app (src/components/tv/TvNavigation.tsx): focus is the only
+   pointer a remote has, so it must be seen from across the room. */
+html.tv :focus {
+  outline: 3px solid var(--color-accent, #f59e0b) !important;
+  outline-offset: 3px !important;
+}
+html.tv .card-hover:focus-within {
+  transform: translateY(-8px) scale(1.02);
+}
+html.tv {
+  cursor: none;
+}

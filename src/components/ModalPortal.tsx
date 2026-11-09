@@ -17,7 +17,9 @@ const ModalPortal = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => setMounted(true), []);
 
   if (!mounted) return null;
-  return createPortal(children, document.body);
+  // data-tv-layer: the TV app keeps remote navigation inside the open modal,
+  // and Back clicks its backdrop (src/components/tv/TvNavigation.tsx).
+  return createPortal(<div data-tv-layer="">{children}</div>, document.body);
 };
 
 export default ModalPortal;

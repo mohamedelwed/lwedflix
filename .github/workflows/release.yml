@@ -10,6 +10,9 @@
 # once every platform's update file is there — the updater never sees a
 # half-finished release.
 #
+# The Google TV app's APK is built and attached too (android.yml lists what
+# it needs).
+#
 # Needs these repository secrets (Settings → Secrets and variables → Actions):
 # TMDB_ACCESS_TOKEN, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
 # and optionally YOUTUBE_API_KEY. They end up inside the installers, as with
@@ -96,8 +99,16 @@ jobs:
             sleep $((attempt * 30))
           done
 
+  # The Google TV app's APK (android.yml), into the same draft.
+  android:
+    needs: draft
+    uses: ./.github/workflows/android.yml
+    with:
+      release-tag: v${{ needs.draft.outputs.version }}
+    secrets: inherit
+
   publish:
-    needs: [draft, build]
+    needs: [draft, build, android]
     runs-on: ubuntu-latest
     steps:
       - env:

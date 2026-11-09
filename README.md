@@ -1,7 +1,7 @@
 # Lwedflix
 
 A desktop app for movies, TV shows and anime, with synced watch parties —
-for macOS, Windows and Linux.
+for macOS, Windows and Linux, and on Google TV.
 
 - Browse and search through TMDB; stream from embedded players, with a
   choice of servers. A server that says it doesn't have the title, or whose
@@ -43,6 +43,8 @@ for macOS, Windows and Linux.
 - Accounts (optional) for friends, messages, posts, watchlists and history,
   on Supabase.
 - Updates itself from GitHub Releases.
+- **Google TV / Android TV**: the same app on the big screen, driven by the
+  remote, watch parties included — see [android/README.md](android/README.md).
 
 ## How it's built
 

@@ -11,7 +11,6 @@ const repoRoot = path.resolve(projectRoot, '..');
 const config = getDefaultConfig(projectRoot);
 config.watchFolders = [path.join(repoRoot, 'src'), path.join(repoRoot, 'public')];
 config.resolver.nodeModulesPaths = [path.join(projectRoot, 'node_modules')];
-config.resolver.disableHierarchicalLookup = true;
 config.resolver.extraNodeModules = { '@shared': path.join(repoRoot, 'src') };
 
 // The desktop's download modules (electron/hls.js, mp4.js, streams.js) are
@@ -34,7 +33,14 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName.startsWith('@shared/')) {
     moduleName = path.join(repoRoot, 'src', moduleName.slice('@shared/'.length));
   }
-  return (upstream ?? context.resolveRequest)(context, moduleName, platform);
+  const resolve = upstream ?? context.resolveRequest;
+  // Packages imported by the shared code (../src, ../electron) come from the
+  // app's node_modules, never the desktop app's: one React, one Supabase.
+  const bare = !moduleName.startsWith('.') && !path.isAbsolute(moduleName);
+  if (bare && !context.originModulePath.startsWith(projectRoot + path.sep)) {
+    return resolve({ ...context, originModulePath: path.join(projectRoot, 'index.js') }, moduleName, platform);
+  }
+  return resolve(context, moduleName, platform);
 };
 
 module.exports = config;

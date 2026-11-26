@@ -20,9 +20,6 @@
       ],
       "@supabase/supabase-js": [
         "./node_modules/@supabase/supabase-js"
-      ],
-      "react": [
-        "./node_modules/@types/react"
       ]
     },
     "types": [

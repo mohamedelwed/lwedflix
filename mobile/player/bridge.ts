@@ -25,7 +25,7 @@ export const js = {
 };
 
 /** Where the wrapper page claims to be; frames see it as their parent's origin. */
-export const WRAPPER_BASE_URL = 'https://lwedflix.app/player/';
+export const WRAPPER_BASE_URL = 'https://localhost/player/';
 
 /** What the screens call on a player WebView. */
 export interface WebViewRef {

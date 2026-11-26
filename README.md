@@ -43,6 +43,9 @@ for macOS, Windows and Linux.
 - Accounts (optional) for friends, messages, posts, watchlists and history,
   on Supabase.
 - Updates itself from GitHub Releases.
+- **On phones**: an Android app (iPhone from the same code) with the same
+  features and look, downloads included, synced with the desktop through the
+  same account — see [mobile/README.md](mobile/README.md).
 
 ## How it's built
 
@@ -73,6 +76,7 @@ tests/             unit tests (node:test); tests/e2e: harnesses run in Electron
 build/icon.png     app icon (electron-builder derives .icns/.ico from it)
 docs/index.html    the download page (GitHub Pages)
 supabase/          database schema, as migrations
+mobile/            the phone app (Expo); reuses src/lib and the player bridge
 ```
 
 **The player bridge** is what a website can't do: the preload also runs

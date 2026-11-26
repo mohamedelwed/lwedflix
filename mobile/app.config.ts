@@ -50,6 +50,7 @@ const config: ExpoConfig = {
     'expo-image',
     'expo-sqlite',
     'expo-video',
+    './plugins/withReleaseSigning',
     ['expo-splash-screen', { backgroundColor: '#0a0a0a', image: './assets/splash-icon.png', imageWidth: 160 }],
   ],
   experiments: { typedRoutes: false },

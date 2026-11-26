@@ -1,0 +1,89 @@
+# Builds the phone app (mobile/) for Android: tests, typecheck, then a
+# release APK, kept as a workflow artifact — and attached to the release
+# when run with a tag (Actions → Mobile → Run workflow → release tag).
+#
+# Secrets: the same TMDB_ACCESS_TOKEN, NEXT_PUBLIC_SUPABASE_URL and
+# NEXT_PUBLIC_SUPABASE_ANON_KEY as the desktop release (they end up inside
+# the app, as with the desktop installers). To sign with your own key, so
+# updates install over the old app: ANDROID_KEYSTORE_BASE64,
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD (see
+# mobile/README.md). Without them the APK is signed with a debug key.
+name: Mobile
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - 'src/lib/**'
+      - 'electron/preload.js'
+      - 'electron/playerProtocol.js'
+      - 'electron/hls.js'
+      - 'electron/mp4.js'
+      - 'electron/streams.js'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Attach the APK to this release (e.g. v1.5.0); leave empty to skip'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci --legacy-peer-deps
+      - run: npm test
+      - run: npm run typecheck
+      - name: Generate the Android project
+        env:
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npx expo prebuild -p android --no-install
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/lwedflix.jks"
+            echo "LWEDFLIX_KEYSTORE=$RUNNER_TEMP/lwedflix.jks" >> "$GITHUB_ENV"
+          fi
+      - name: Build the APK
+        working-directory: mobile/android
+        env:
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          LWEDFLIX_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LWEDFLIX_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LWEDFLIX_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --no-daemon
+          version=$(node -p "require('../package.json').version")
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Lwedflix-$version.apk"
+          echo "APK=$RUNNER_TEMP/Lwedflix-$version.apk" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lwedflix-android
+          path: ${{ env.APK }}
+      - name: Attach to the release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.release_tag }}" "$APK" --clobber

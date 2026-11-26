@@ -1,13 +1,12 @@
 import { Buffer } from 'buffer';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as LegacyFS from 'expo-file-system/legacy';
-import muxjs from 'mux.js';
-import { ivFor, parsePlaylist, pickVariant, qualities as hlsQualities, tsStart, type Segment } from '@electron/hls';
-import { Mp4Writer, parseFragments, parseInit, type FileHandleLike, type Init } from '@electron/mp4';
+import { parsePlaylist, qualities as hlsQualities } from '@electron/hls';
+import type { FileHandleLike } from '@electron/mp4';
 import { classify, Registry, titleFor } from '@electron/streams';
 import type { DownloadMeta, Quality, StreamOption } from '@shared/lib/downloads';
 import type { CapturedStream } from '@/player/types';
-import { decryptAes128 } from './aes.ts';
+import { DownloadError, saveHls } from './hlsJob.ts';
 import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updateDownload, type StoredDownload } from './store';
 
 // Downloads on the phone, as electron/downloads.js does them on desktop:
@@ -17,8 +16,6 @@ import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updat
 // and play offline (app/offline/[id].tsx).
 
 const RUNNING = 2; // downloads at once; the rest wait
-const WORKERS = 4; // segments fetched at once, per download
-const AHEAD = 16; // segments fetched beyond the one being written
 const ATTEMPTS = 6;
 const GONE = new Set([401, 403, 404, 410, 428]);
 // What the servers see: a phone's browser, like the player's WebView.
@@ -26,7 +23,6 @@ const USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
 const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv)(\?|#|$)/i;
 
-class DownloadError extends Error {}
 
 // ---- Streams the player loaded ---------------------------------------------
 
@@ -89,8 +85,9 @@ async function openForWriting(uri: string): Promise<FileHandleLike> {
   const handle = file.open();
   return {
     async write(buf, offset, length, position) {
+      // Mp4Writer awaits each write before the next, so offsets never interleave.
       handle.offset = position;
-      handle.writeBytes(buf.subarray(offset, offset + length));
+      await handle.writeBytes(buf.subarray(offset, offset + length));
       return { bytesWritten: length };
     },
     async close() {
@@ -401,132 +398,25 @@ async function fetchBytes(url: string, headers: Record<string, string>, range?: 
   throw lastError instanceof Error ? lastError : new Error('fetch failed');
 }
 
-const qualityOfWidth = (width: number) =>
-  width >= 3800 ? '2160p' : width >= 1900 ? '1080p' : width >= 1260 ? '720p' : width >= 840 ? '480p' : width >= 600 ? '360p' : null;
-
 async function downloadHls(id: string, run: Run) {
   const source = run.source!;
   const signal = run.controller.signal;
-  const get = (url: string, range?: { offset: number; length: number } | null) => fetchBytes(url, source.headers, range, signal);
-
-  let playlist = parsePlaylist(Buffer.from(await get(source.url)).toString('utf8'), source.url);
-  if (playlist.master) {
-    const job = getDownload(id)!;
-    const variant = pickVariant(playlist, run.variant, job.target?.height);
-    if (!variant) throw new DownloadError('This server keeps the sound in a separate stream, which Lwedflix can’t download yet. Try another server.');
-    updateDownload(id, { quality: variant.height ? `${variant.height}p` : null });
-    playlist = parsePlaylist(Buffer.from(await get(variant.url)).toString('utf8'), variant.url);
-  }
-  const segments = playlist.segments;
-  if (segments.length === 0 || !(playlist.duration > 0)) throw new DownloadError('The stream has nothing in it. Try another server.');
-
   const job = getDownload(id)!;
   const file = new File(root(), `${safeName(job.title)}-${id.slice(0, 8)}.mp4`);
-  updateDownload(id, { duration: Math.round(playlist.duration), fileUri: file.uri, fileName: file.name });
-
-  const writer = await Mp4Writer.create(file.uri, openForWriting);
-  let init: Init | null = null;
-  const noteQuality = (tracks: Init) => {
-    const width = tracks.tracks.find((t) => t.handler === 'vide')?.width ?? 0;
-    if (!getDownload(id)?.quality && width) updateDownload(id, { quality: qualityOfWidth(width) });
-  };
-  if (playlist.map) {
-    init = parseInit(Buffer.from(await get(playlist.map.url, playlist.map.range)));
-    writer.setTracks(init);
-    noteQuality(init);
-  }
-  const transmuxer = init ? null : new muxjs.mp4.Transmuxer({ remux: true });
-  const produced: { initSegment: Uint8Array; data: Uint8Array }[] = [];
-  transmuxer?.on('data', (segment: { initSegment: Uint8Array; data: Uint8Array }) => produced.push(segment));
-
-  const keys = new Map<string, Promise<Uint8Array>>();
-  const decrypt = async (segment: Segment, bytes: Uint8Array) => {
-    if (!segment.key) return bytes;
-    if (segment.key.method !== 'AES-128' || !segment.key.uri) throw new DownloadError('This stream is protected in a way Lwedflix can’t save. Try another server.');
-    if (!keys.has(segment.key.uri)) keys.set(segment.key.uri, get(segment.key.uri));
-    return decryptAes128(bytes, await keys.get(segment.key.uri)!, ivFor(segment));
-  };
-  const write = async (segment: Segment, raw: Uint8Array) => {
-    const bytes = Buffer.from(await decrypt(segment, raw));
-    if (!transmuxer) return writer.addRuns(parseFragments(bytes, init));
-    const start = tsStart(bytes);
-    if (start < 0) throw new DownloadError('The server sent something that isn’t video. Try another server.');
-    transmuxer.push(bytes.subarray(start));
-    transmuxer.flush();
-    for (const out of produced.splice(0)) {
-      if (!init) {
-        init = parseInit(Buffer.from(out.initSegment));
-        writer.setTracks(init);
-        noteQuality(init);
-      }
-      await writer.addRuns(parseFragments(Buffer.from(out.data), init));
-    }
-  };
-
-  // Fetched in parallel, written in order.
-  const ready = new Map<number, Uint8Array>();
-  let next = 0;
-  let written = 0;
-  let seconds = 0;
-  let failure: unknown = null;
-  const wake: (() => void)[] = [];
-  const signalAll = () => wake.splice(0).forEach((w) => w());
-
-  const worker = async () => {
-    while (!failure && !run.cancelled) {
-      await gate(run);
-      if (failure || run.cancelled || next >= segments.length) return;
-      if (next - written >= AHEAD) {
-        await Promise.race([new Promise<void>((r) => wake.push(r)), sleep(250)]);
-        continue;
-      }
-      const i = next++;
-      try {
-        ready.set(i, await get(segments[i].url, segments[i].range));
-        signalAll();
-      } catch (err) {
-        failure ??= err;
-        signalAll();
-        return;
-      }
-    }
-  };
-
-  const writerLoop = async () => {
-    while (!failure && !run.cancelled && written < segments.length) {
-      const bytes = ready.get(written);
-      if (!bytes) {
-        await Promise.race([new Promise<void>((r) => wake.push(r)), sleep(250)]);
-        continue;
-      }
-      ready.delete(written);
-      try {
-        await write(segments[written], bytes);
-      } catch (err) {
-        failure ??= err;
-        signalAll();
-        return;
-      }
-      seconds += segments[written].duration;
-      written++;
-      tick(id, run, writer.offset, Math.min(0.999, seconds / playlist.duration));
-      signalAll();
-    }
-  };
-
-  try {
-    await Promise.all([...Array.from({ length: WORKERS }, worker), writerLoop()]);
-    if (run.cancelled) {
-      await writer.abort();
-      return;
-    }
-    if (failure) throw failure;
-    await writer.finish();
-  } catch (err) {
-    await writer.abort();
-    throw err;
-  }
-  updateDownload(id, { state: 'done', progress: 1, speed: 0, eta: null, finishedAt: Date.now(), bytes: new File(file.uri).size ?? writer.offset, totalBytes: null });
+  updateDownload(id, { fileUri: file.uri, fileName: file.name });
+  const result = await saveHls(source.url, file.uri, {
+    variant: run.variant,
+    maxHeight: job.target?.height ?? null,
+    get: (url, range) => fetchBytes(url, source.headers, range, signal),
+    open: openForWriting,
+    gate: () => gate(run),
+    cancelled: () => run.cancelled,
+    onQuality: (quality) => updateDownload(id, { quality }),
+    onDuration: (duration) => updateDownload(id, { duration: Math.round(duration) }),
+    onProgress: (bytes, fraction) => tick(id, run, bytes, fraction),
+  });
+  if (!result) return; // cancelled
+  updateDownload(id, { state: 'done', progress: 1, speed: 0, eta: null, finishedAt: Date.now(), bytes: new File(file.uri).size ?? result.bytes, totalBytes: null });
 }
 
 async function downloadFile(id: string, run: Run) {

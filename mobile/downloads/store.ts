@@ -15,7 +15,8 @@ export interface StoredDownload extends Download {
   posterUri: string | null;
 }
 
-let list: StoredDownload[] = load();
+// Read on first use, not at import: localStorage is installed by then.
+let list: StoredDownload[] | null = null;
 const listeners = new Set<() => void>();
 
 function load(): StoredDownload[] {
@@ -41,16 +42,18 @@ function persist() {
 }
 
 export function getDownloads(): StoredDownload[] {
+  list ??= load();
   return list;
 }
 
 export function getDownload(id: string): StoredDownload | undefined {
-  return list.find((d) => d.id === id);
+  return getDownloads().find((d) => d.id === id);
 }
 
 export function putDownload(download: StoredDownload) {
-  const i = list.findIndex((d) => d.id === download.id);
-  list = i === -1 ? [download, ...list] : list.map((d) => (d.id === download.id ? download : d));
+  const current = getDownloads();
+  const i = current.findIndex((d) => d.id === download.id);
+  list = i === -1 ? [download, ...current] : current.map((d) => (d.id === download.id ? download : d));
   persist();
   listeners.forEach((l) => l());
 }
@@ -61,7 +64,7 @@ export function updateDownload(id: string, patch: Partial<StoredDownload>) {
 }
 
 export function deleteDownload(id: string) {
-  list = list.filter((d) => d.id !== id);
+  list = getDownloads().filter((d) => d.id !== id);
   persist();
   listeners.forEach((l) => l());
 }

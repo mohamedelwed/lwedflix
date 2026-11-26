@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import type { WebViewRef } from '@/player/bridge';
-import { useKeepAwake } from 'expo-keep-awake';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Captions, ChevronLeft, Gauge, Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Server, SkipForward, SlidersHorizontal } from 'lucide-react-native';
 import { PROVIDERS, embedUrl } from '@shared/lib/providers';
 import { formatTimestamp } from '@shared/lib/watchRoom';
@@ -76,7 +76,12 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
   const html = useMemo(() => wrapperFor(token, url, !!autoplay), [token]);
   const ready = state !== null;
 
-  useKeepAwake(playing ? 'player' : undefined, { suppressDeactivateWarnings: true });
+  // The screen stays on while the stream plays, not while it's paused.
+  useEffect(() => {
+    if (!playing) return;
+    void activateKeepAwakeAsync('player');
+    return () => void deactivateKeepAwake('player');
+  }, [playing]);
 
   const send = useCallback((command: PlayerCommand) => {
     web.current?.injectJavaScript(js.command(command));

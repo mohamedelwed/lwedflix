@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<iframe id="player" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture *; fullscreen" referrerpolicy="no-referrer"></iframe>
+<script>
+// The player's own page: it holds the server's embed and routes the player
+// bridge between it and the app, as electron/main.js does on desktop —
+// states from the frame that has the <video> (re-checked with
+// playerProtocol's cleanState), commands back to it.
+(function () {
+  var TOKEN = '__LWF_TOKEN__';
+  var protocol = (function (module) {
+    /*__PLAYER_PROTOCOL__*/
+    return module.exports;
+  })({ exports: {} });
+
+  var playerFrame = null;
+  var autoplayUntil = 0;
+  var frame = document.getElementById('player');
+  var toApp = function (c, p) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ c: c, p: p }));
+  };
+
+  window.addEventListener('message', function (event) {
+    var m = event.data;
+    if (!m || m.lwf !== TOKEN || !event.source || event.source === window) return;
+    var source = event.source;
+    if (m.t === 'invoke') {
+      var ok = m.c === 'player:should-autoplay';
+      source.postMessage({ lwf: TOKEN, t: 'reply', id: m.id, ok: ok, v: ok ? Date.now() < autoplayUntil : 'not on the phone' }, '*');
+      return;
+    }
+    if (m.t !== 'send') return;
+    switch (m.c) {
+      case 'player:state':
+        if (m.p && m.p.event === 'gone') {
+          if (source !== playerFrame) return;
+          playerFrame = null;
+          toApp('state', null);
+          return;
+        }
+        var clean = protocol.cleanState(m.p);
+        if (!clean) return;
+        if (clean.playing) autoplayUntil = 0;
+        playerFrame = source;
+        toApp('state', clean);
+        break;
+      case 'player:problem':
+        toApp('problem', { reason: m.p && m.p.reason === 'error' ? 'error' : 'unavailable' });
+        break;
+      case 'stream':
+        if (m.p && typeof m.p.url === 'string') {
+          toApp('stream', {
+            url: String(m.p.url).slice(0, 4096),
+            type: String(m.p.type || '').slice(0, 100),
+            size: Number(m.p.size) || 0,
+            frame: String(m.p.frame || '').slice(0, 2048),
+          });
+        }
+        break;
+    }
+  });
+
+  window.__lwfCommand = function (raw) {
+    var command = protocol.cleanCommand(raw);
+    if (!command || command.action === 'pip' || !playerFrame) return;
+    try {
+      playerFrame.postMessage({ lwf: TOKEN, t: 'event', c: 'player:command', p: command }, '*');
+    } catch (e) {
+      playerFrame = null;
+    }
+  };
+  window.__lwfAutoplay = function () {
+    autoplayUntil = Date.now() + 30000;
+  };
+  window.__lwfLoad = function (url) {
+    playerFrame = null;
+    toApp('state', null);
+    frame.src = url;
+  };
+  frame.addEventListener('load', function () {
+    toApp('load', null);
+  });
+  var initial = '__INITIAL_URL__';
+  if ('__AUTOPLAY__' === 'yes') window.__lwfAutoplay();
+  if (initial && initial.indexOf('__') !== 0) window.__lwfLoad(initial);
+})();
+</script>
+</body>
+</html>

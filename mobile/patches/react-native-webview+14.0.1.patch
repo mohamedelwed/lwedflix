@@ -1,0 +1,61 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+index 80c6803..98c177f 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -18,6 +18,7 @@ import android.webkit.WebViewClient;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.webkit.JavaScriptReplyProxy;
++import androidx.webkit.ScriptHandler;
+ import androidx.webkit.WebMessageCompat;
+ import androidx.webkit.WebViewCompat;
+ import androidx.webkit.WebViewFeature;
+@@ -308,7 +309,28 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+         }
+     }
+ 
++    // Lwedflix: with injectedJavaScriptBeforeContentLoadedForMainFrameOnly
++    // false, the script is registered as a document-start script for every
++    // frame (iframes included), which Android otherwise never runs it in.
++    private ScriptHandler documentStartScript = null;
++
++    public void updateDocumentStartScript() {
++        if (documentStartScript != null) {
++            documentStartScript.remove();
++            documentStartScript = null;
++        }
++        if (injectedJavaScriptBeforeContentLoadedForMainFrameOnly ||
++                injectedJSBeforeContentLoaded == null ||
++                TextUtils.isEmpty(injectedJSBeforeContentLoaded) ||
++                !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
++            return;
++        }
++        documentStartScript = WebViewCompat.addDocumentStartJavaScript(
++                this, "(function() {\n" + injectedJSBeforeContentLoaded + ";\n})();", java.util.Collections.singleton("*"));
++    }
++
+     public void callInjectedJavaScriptBeforeContentLoaded() {
++        if (documentStartScript != null) return; // already runs in every frame
+         if (getSettings().getJavaScriptEnabled() &&
+                 injectedJSBeforeContentLoaded != null &&
+                 !TextUtils.isEmpty(injectedJSBeforeContentLoaded)) {
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+index f83033b..aca550d 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -495,6 +495,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     fun setInjectedJavaScriptBeforeContentLoaded(viewWrapper: RNCWebViewWrapper, value: String?) {
+         val view = viewWrapper.webView
+         view.injectedJSBeforeContentLoaded = value
++        view.updateDocumentStartScript()
+     }
+ 
+     fun setInjectedJavaScriptForMainFrameOnly(viewWrapper: RNCWebViewWrapper, value: Boolean) {
+@@ -505,6 +506,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     fun setInjectedJavaScriptBeforeContentLoadedForMainFrameOnly(viewWrapper: RNCWebViewWrapper, value: Boolean) {
+         val view = viewWrapper.webView
+         view.injectedJavaScriptBeforeContentLoadedForMainFrameOnly = value
++        view.updateDocumentStartScript()
+     }
+ 
+     fun setInjectedJavaScriptObject(viewWrapper: RNCWebViewWrapper, value: String?) {

@@ -239,8 +239,13 @@ function moov(tracks) {
 
 /** Writes an MP4 from sample runs as they come: media first, index last. */
 class Mp4Writer {
-  static async create(file) {
-    const writer = new Mp4Writer(await fsp.open(file, 'w'));
+  /**
+   * `open` gives the file handle to write through ({ write(buf, offset,
+   * length, position), close() }, as fs/promises' FileHandle); the phone app
+   * (mobile/downloads) passes its own.
+   */
+  static async create(file, open = (path) => fsp.open(path, 'w')) {
+    const writer = new Mp4Writer(await open(file));
     await writer.write(box('ftyp', Buffer.from('isom', 'latin1'), u32(0x200), Buffer.from('isomiso2avc1mp41', 'latin1')));
     writer.mdatStart = writer.offset;
     const header = Buffer.alloc(16); // 64-bit size, filled in at the end

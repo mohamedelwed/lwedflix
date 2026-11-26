@@ -1,8 +1,8 @@
-// Builds player/bridge.generated.ts: the frame shim with electron/preload.js
+// Builds player/bridge.generated.ts (and copies the Movie Map's data in): the frame shim with electron/preload.js
 // inlined, and the wrapper page with electron/playerProtocol.js inlined, so
 // the phone app runs the desktop player bridge unchanged. Run by `npm run
 // bridge` (and before every start/build).
-import { readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,3 +26,7 @@ export const WRAPPER_HTML = ${JSON.stringify(wrapperOut)};
 `;
 writeFileSync(join(mobile, 'player', 'bridge.generated.ts'), out);
 console.log('player/bridge.generated.ts written');
+
+// The Movie Map's data, as an asset (see metro.config.js).
+copyFileSync(join(mobile, '..', 'public', 'movie-map', 'map.json'), join(mobile, 'assets', 'movie-map.mapdata'));
+console.log('assets/movie-map.mapdata copied');

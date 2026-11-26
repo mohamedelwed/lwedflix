@@ -1,13 +1,13 @@
 import { Buffer } from 'buffer';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as LegacyFS from 'expo-file-system/legacy';
-import aesjs from 'aes-js';
 import muxjs from 'mux.js';
 import { ivFor, parsePlaylist, pickVariant, qualities as hlsQualities, tsStart, type Segment } from '@electron/hls';
 import { Mp4Writer, parseFragments, parseInit, type FileHandleLike, type Init } from '@electron/mp4';
 import { classify, Registry, titleFor } from '@electron/streams';
 import type { DownloadMeta, Quality, StreamOption } from '@shared/lib/downloads';
 import type { CapturedStream } from '@/player/types';
+import { decryptAes128 } from './aes.ts';
 import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updateDownload, type StoredDownload } from './store';
 
 // Downloads on the phone, as electron/downloads.js does them on desktop:
@@ -254,7 +254,12 @@ export function resumeDownload(id: string) {
   run.samples = [];
   run.waiters.splice(0).forEach((w) => w());
   updateDownload(id, { state: run.source || job.target ? (job.bytes > 0 ? 'downloading' : 'queued') : 'queued' });
-  if (run.resumable) void continueFile(id, run);
+  if (run.resumable) {
+    continueFile(id, run).catch(() => {
+      runs.delete(id);
+      updateDownload(id, { state: 'failed', error: 'The download failed. Play the title again, then download it.', speed: 0, eta: null });
+    });
+  }
   pump();
 }
 
@@ -394,13 +399,6 @@ async function fetchBytes(url: string, headers: Record<string, string>, range?: 
     }
   }
   throw lastError instanceof Error ? lastError : new Error('fetch failed');
-}
-
-function decryptAes128(bytes: Uint8Array, key: Uint8Array, iv: Uint8Array): Uint8Array {
-  const cbc = new aesjs.ModeOfOperation.cbc(Array.from(key), Array.from(iv));
-  const out = cbc.decrypt(bytes.length % 16 === 0 ? bytes : bytes.subarray(0, bytes.length - (bytes.length % 16)));
-  const pad = out[out.length - 1];
-  return pad > 0 && pad <= 16 ? out.subarray(0, out.length - pad) : out;
 }
 
 const qualityOfWidth = (width: number) =>

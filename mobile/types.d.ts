@@ -5,3 +5,4 @@ declare module 'react-native-url-polyfill/auto';
 interface RequestInit {
   next?: { revalidate?: number | false; tags?: string[] };
 }
+declare module '*.mapdata' { const asset: number; export default asset; }

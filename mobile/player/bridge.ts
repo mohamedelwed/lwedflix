@@ -1,4 +1,4 @@
-import { SHIM_SOURCE, WRAPPER_HTML } from './bridge.generated';
+import { SHIM_SOURCE, WRAPPER_HTML } from './bridge.generated.ts';
 
 // A fresh token per player: the wrapper page and the frames only listen to
 // messages that carry it.

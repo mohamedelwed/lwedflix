@@ -19,6 +19,10 @@ config.resolver.extraNodeModules = { '@shared': path.join(repoRoot, 'src') };
 config.watchFolders.push(path.join(repoRoot, 'electron'));
 const NODE_SHIMS = { 'node:crypto': path.join(projectRoot, 'shims/crypto.js') };
 
+// The Movie Map's data ships as an asset (scripts/build-bridge.mjs copies
+// public/movie-map/map.json in), read at runtime rather than bundled as JS.
+config.resolver.assetExts.push('mapdata');
+
 const upstream = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName.startsWith('node:')) {

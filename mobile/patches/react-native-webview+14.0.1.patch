@@ -1,0 +1,151 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/LwfAdBlock.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/LwfAdBlock.java
+new file mode 100644
+index 0000000..f41c383
+--- /dev/null
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/LwfAdBlock.java
+@@ -0,0 +1,62 @@
++package com.reactnativecommunity.webview;
++
++import android.content.Context;
++import android.webkit.WebResourceResponse;
++
++import java.io.BufferedReader;
++import java.io.ByteArrayInputStream;
++import java.io.InputStreamReader;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.Set;
++
++/**
++ * Lwedflix: the desktop app's ad and tracker blocklist (electron/adblock.js),
++ * applied to every request a WebView makes outside its top frame, as the
++ * desktop's session.webRequest.onBeforeRequest does. The list is written to
++ * the APK's assets by mobile/plugins/withAdBlock.js. A blocked domain covers
++ * its subdomains.
++ */
++final class LwfAdBlock {
++    private static final String ASSET = "lwf-blocked-domains.txt";
++    private static volatile Set<String> domains = null;
++
++    private LwfAdBlock() {}
++
++    private static Set<String> load(Context context) {
++        Set<String> loaded = domains;
++        if (loaded != null) return loaded;
++        synchronized (LwfAdBlock.class) {
++            if (domains != null) return domains;
++            Set<String> set = new HashSet<>();
++            try (BufferedReader reader = new BufferedReader(new InputStreamReader(context.getAssets().open(ASSET), "UTF-8"))) {
++                String line;
++                while ((line = reader.readLine()) != null) {
++                    line = line.trim().toLowerCase();
++                    if (!line.isEmpty()) set.add(line);
++                }
++            } catch (Exception e) {
++                // No list in this build: block nothing rather than fail.
++            }
++            domains = Collections.unmodifiableSet(set);
++            return domains;
++        }
++    }
++
++    static boolean isBlocked(Context context, String host) {
++        if (host == null) return false;
++        Set<String> list = load(context);
++        String h = host.toLowerCase();
++        if (h.endsWith(".")) h = h.substring(0, h.length() - 1);
++        while (true) {
++            if (list.contains(h)) return true;
++            int dot = h.indexOf('.');
++            if (dot == -1) return false;
++            h = h.substring(dot + 1);
++        }
++    }
++
++    static WebResourceResponse blocked() {
++        return new WebResourceResponse("text/plain", "utf-8", 403, "Blocked", Collections.<String, String>emptyMap(), new ByteArrayInputStream(new byte[0]));
++    }
++}
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+index 80c6803..98c177f 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -18,6 +18,7 @@ import android.webkit.WebViewClient;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.webkit.JavaScriptReplyProxy;
++import androidx.webkit.ScriptHandler;
+ import androidx.webkit.WebMessageCompat;
+ import androidx.webkit.WebViewCompat;
+ import androidx.webkit.WebViewFeature;
+@@ -308,7 +309,28 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+         }
+     }
+ 
++    // Lwedflix: with injectedJavaScriptBeforeContentLoadedForMainFrameOnly
++    // false, the script is registered as a document-start script for every
++    // frame (iframes included), which Android otherwise never runs it in.
++    private ScriptHandler documentStartScript = null;
++
++    public void updateDocumentStartScript() {
++        if (documentStartScript != null) {
++            documentStartScript.remove();
++            documentStartScript = null;
++        }
++        if (injectedJavaScriptBeforeContentLoadedForMainFrameOnly ||
++                injectedJSBeforeContentLoaded == null ||
++                TextUtils.isEmpty(injectedJSBeforeContentLoaded) ||
++                !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
++            return;
++        }
++        documentStartScript = WebViewCompat.addDocumentStartJavaScript(
++                this, "(function() {\n" + injectedJSBeforeContentLoaded + ";\n})();", java.util.Collections.singleton("*"));
++    }
++
+     public void callInjectedJavaScriptBeforeContentLoaded() {
++        if (documentStartScript != null) return; // already runs in every frame
+         if (getSettings().getJavaScriptEnabled() &&
+                 injectedJSBeforeContentLoaded != null &&
+                 !TextUtils.isEmpty(injectedJSBeforeContentLoaded)) {
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 209b855..c509077 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -35,6 +35,17 @@ import android.webkit.CookieManager;
+ import java.util.concurrent.atomic.AtomicReference;
+ 
+ public class RNCWebViewClient extends WebViewClient {
++
++    // Lwedflix: requests to ad and tracker networks from the embedded
++    // players never leave the phone (LwfAdBlock). The top frame is the app's
++    // own page and is never blocked, as on desktop.
++    @Override
++    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
++        if (!request.isForMainFrame() && request.getUrl() != null && LwfAdBlock.isBlocked(view.getContext(), request.getUrl().getHost())) {
++            return LwfAdBlock.blocked();
++        }
++        return super.shouldInterceptRequest(view, request);
++    }
+     private static String TAG = "RNCWebViewClient";
+     protected static final int SHOULD_OVERRIDE_URL_LOADING_TIMEOUT = 250;
+ 
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+index f83033b..aca550d 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -495,6 +495,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     fun setInjectedJavaScriptBeforeContentLoaded(viewWrapper: RNCWebViewWrapper, value: String?) {
+         val view = viewWrapper.webView
+         view.injectedJSBeforeContentLoaded = value
++        view.updateDocumentStartScript()
+     }
+ 
+     fun setInjectedJavaScriptForMainFrameOnly(viewWrapper: RNCWebViewWrapper, value: Boolean) {
+@@ -505,6 +506,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     fun setInjectedJavaScriptBeforeContentLoadedForMainFrameOnly(viewWrapper: RNCWebViewWrapper, value: Boolean) {
+         val view = viewWrapper.webView
+         view.injectedJavaScriptBeforeContentLoadedForMainFrameOnly = value
++        view.updateDocumentStartScript()
+     }
+ 
+     fun setInjectedJavaScriptObject(viewWrapper: RNCWebViewWrapper, value: String?) {

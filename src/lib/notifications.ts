@@ -128,8 +128,12 @@ export async function markAllRead(): Promise<void> {
  * (0002 does this). Without it the subscription silently receives nothing.
  */
 export function subscribeToNotifications(userId: string, onChange: () => void): () => void {
+  // A channel of its own per subscriber (as dm.ts and posts.ts do):
+  // supabase.channel() hands back an existing channel of the same name, and
+  // a second listener can't join one already subscribed — the phone app's
+  // tabs each have a top bar that subscribes.
   const channel = supabase
-    .channel(`notifications:${userId}`)
+    .channel(`notifications:${userId}:${crypto.randomUUID()}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },

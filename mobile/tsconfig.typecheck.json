@@ -1,0 +1,20 @@
+{
+  // Typechecking only (npm run typecheck). Shared code in ../src imports
+  // packages by name; resolve them from this app's node_modules, as Metro
+  // does (metro.config.js), so CI needn't install the desktop app's. Kept
+  // out of tsconfig.json because Metro reads that file's paths too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"],
+      "@shared/*": ["../src/*"],
+      "@electron/*": ["../electron/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "@supabase/supabase-js": ["./node_modules/@supabase/supabase-js"],
+      "@react-native-async-storage/async-storage": ["./node_modules/@react-native-async-storage/async-storage"],
+      "expo-constants": ["./node_modules/expo-constants"],
+      "react-native-url-polyfill/auto": ["./node_modules/react-native-url-polyfill/auto"]
+    }
+  }
+}

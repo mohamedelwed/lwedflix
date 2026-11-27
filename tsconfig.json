@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "server-bundle", "release", "electron", "scripts"]
+  "exclude": ["node_modules", "server-bundle", "release", "electron", "scripts", "mobile", "src/**/*.native.ts"]
 }

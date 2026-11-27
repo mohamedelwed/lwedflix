@@ -1,0 +1,42 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@shared/*": [
+        "../src/*"
+      ],
+      "@electron/*": [
+        "../electron/*"
+      ],
+      "expo-constants": [
+        "./node_modules/expo-constants"
+      ],
+      "@react-native-async-storage/async-storage": [
+        "./node_modules/@react-native-async-storage/async-storage"
+      ],
+      "@supabase/supabase-js": [
+        "./node_modules/@supabase/supabase-js"
+      ]
+    },
+    "types": [
+      "node"
+    ],
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../src/lib/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "ios",
+    "../src/lib/richText.tsx"
+  ]
+}

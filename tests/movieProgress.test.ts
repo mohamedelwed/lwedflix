@@ -49,3 +49,26 @@ test('survives corrupt storage', () => {
   setMovieProgress(550, 1500, 8348);
   assert.equal(getMovieResume(550), 1500);
 });
+
+test('merging keeps the newer entry', async () => {
+  const { mergeMovieProgress } = await import('../src/lib/movieProgress.ts');
+  const older = { watched: 100, duration: 6000, at: 1 };
+  const newer = { watched: 900, duration: 6000, at: 2 };
+  assert.equal(mergeMovieProgress(older, newer), newer);
+  assert.equal(mergeMovieProgress(newer, older), newer);
+  assert.equal(mergeMovieProgress(older, undefined), older);
+  assert.equal(mergeMovieProgress(undefined, newer), newer);
+});
+
+test('a hydrated entry is stored and listeners hear only local writes', async () => {
+  const { putMovieEntry, getMovieEntry, onMovieProgress } = await import('../src/lib/movieProgress.ts');
+  const heard: string[] = [];
+  const stop = onMovieProgress((id) => heard.push(id));
+  putMovieEntry(7, { watched: 300, duration: 6000, at: 5 });
+  assert.equal(getMovieEntry(7)?.watched, 300);
+  assert.equal(getMovieResume(7), 300);
+  setMovieProgress(8, 400, 6000);
+  stop();
+  setMovieProgress(9, 400, 6000);
+  assert.deepEqual(heard, ['8']);
+});

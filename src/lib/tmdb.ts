@@ -1,5 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
-const ACCESS_TOKEN = process.env.TMDB_ACCESS_TOKEN;
+import { TMDB_ACCESS_TOKEN as ACCESS_TOKEN, TMDB_BASE_URL as BASE_URL } from './tmdbConfig';
 
 const options = {
   method: 'GET',

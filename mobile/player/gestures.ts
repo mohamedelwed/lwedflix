@@ -46,7 +46,15 @@ export function fillScale(viewW: number, viewH: number, aspect = 16 / 9): number
   return Math.max(1, view > aspect ? view / aspect : aspect / view);
 }
 
-/** Clearly vertical: far enough to mean it, and much more up/down than sideways. */
+/** Vertical: far enough to mean it, and more up/down than sideways (a swipe often starts a little diagonal). */
 export function isVertical(dx: number, dy: number): boolean {
-  return Math.abs(dy) > 12 && Math.abs(dy) > 1.5 * Math.abs(dx);
+  return Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx);
 }
+
+// The screen's brightness is a backlight level, but eyes see it on a curve:
+// swiping in what eyes see makes every centimetre change it about as much.
+const GAMMA = 2.2;
+/** A backlight level (0–1) as it looks. */
+export const toPerceived = (linear: number) => Math.pow(Math.min(1, Math.max(0, linear)), 1 / GAMMA);
+/** How it looks (0–1) as a backlight level. */
+export const fromPerceived = (perceived: number) => Math.pow(Math.min(1, Math.max(0, perceived)), GAMMA);

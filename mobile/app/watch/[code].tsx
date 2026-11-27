@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { StatusBar as RNStatusBar } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -349,7 +350,8 @@ export default function WatchPartyScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: fullscreen ? '#000' : colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar hidden={fullscreen} style="light" />
-      <View style={{ height: fullscreen ? 0 : insets.top, backgroundColor: '#000' }} />
+      {/* After fullscreen (status bar hidden) the inset can read 0 for a moment: Android's own height is the floor. */}
+      <View style={{ height: fullscreen ? 0 : Math.max(insets.top, RNStatusBar.currentHeight ?? 0), backgroundColor: '#000' }} />
       <PlayerView
         ref={player}
         media={media}

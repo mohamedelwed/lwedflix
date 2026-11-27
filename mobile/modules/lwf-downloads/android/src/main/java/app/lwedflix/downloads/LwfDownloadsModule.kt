@@ -59,7 +59,11 @@ class LwfDownloadsModule : Module() {
       val own = appContext.currentActivity?.window?.attributes?.screenBrightness ?: -1f
       if (own >= 0f) own.toDouble()
       else try {
-        (Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255.0).coerceIn(0.0, 1.0)
+        // The phone's setting runs to the device's own maximum (255 on most, 1023 or more on some).
+        val res = android.content.res.Resources.getSystem()
+        val id = res.getIdentifier("config_screenBrightnessSettingMaximum", "integer", "android")
+        val max = (if (id != 0) res.getInteger(id) else 255).coerceAtLeast(1)
+        (Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS).toDouble() / max).coerceIn(0.0, 1.0)
       } catch (e: Exception) {
         0.5
       }

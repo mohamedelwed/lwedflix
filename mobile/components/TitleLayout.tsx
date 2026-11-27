@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StatusBar as RNStatusBar } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -74,7 +75,8 @@ export default function TitleLayout({
   return (
     <View style={{ flex: 1, backgroundColor: fullscreen ? '#000' : colors.background }}>
       <StatusBar hidden={fullscreen} style="light" />
-      <View style={{ height: fullscreen ? 0 : insets.top, backgroundColor: '#000' }} />
+      {/* After fullscreen (status bar hidden) the inset can read 0 for a moment: Android's own height is the floor. */}
+      <View style={{ height: fullscreen ? 0 : Math.max(insets.top, RNStatusBar.currentHeight ?? 0), backgroundColor: '#000' }} />
       {playing ? (
         player
       ) : (

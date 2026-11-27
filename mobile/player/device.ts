@@ -1,5 +1,8 @@
 import { LwfDownloads } from '@/modules/lwf-downloads';
 
+/** Whether this phone lets the player change brightness and volume (Android, for now). */
+export const deviceControls = !!LwfDownloads;
+
 // The player's brightness and volume swipes (GestureLayer.tsx): this
 // screen's brightness, and the phone's media volume. Without the native
 // module (iOS for now, tests) they do nothing and report middle values.

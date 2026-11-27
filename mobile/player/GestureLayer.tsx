@@ -3,8 +3,8 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector, useCompetingGestures, useExclusiveGestures, usePanGesture, usePinchGesture, useTapGesture } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChevronsLeft, ChevronsRight, Sun, Volume1, Volume2, VolumeX } from 'lucide-react-native';
-import { getBrightness, getVolume, setBrightness, setVolume } from './device';
-import { isVertical, levelAfterSwipe, nextSkip, swipeZone, tapZone, type SkipStreak } from './gestures';
+import { deviceControls, getBrightness, getVolume, setBrightness, setVolume } from './device';
+import { fromPerceived, isVertical, levelAfterSwipe, nextSkip, swipeZone, tapZone, toPerceived, type SkipStreak } from './gestures';
 import { colors, radius } from '@/theme';
 
 // The player's gestures, over the server's page (which never sees them):
@@ -27,7 +27,7 @@ export default function GestureLayer({
   onZoom,
 }: {
   fullscreen: boolean;
-  /** Double-tap and swipes (the "Gestures" switch); a tap always works. */
+  /** Double-tap, every swipe and the pinch (the "Gestures" switch); a tap always works. */
   gestures: boolean;
   /** The screen lock: only a tap (which shows the unlock button) gets through. */
   locked: boolean;
@@ -100,7 +100,7 @@ export default function GestureLayer({
 
   const pan = usePanGesture({
     runOnJS: true,
-    enabled: !locked,
+    enabled: gestures && !locked,
     activeOffsetY: [-14, 14],
     failOffsetX: [-24, 24],
     onActivate: (e) => {
@@ -108,8 +108,9 @@ export default function GestureLayer({
         swipe.current = null;
         return;
       }
-      const zone = fullscreen && gestures ? swipeZone(e.x, size.current.width) : null;
-      if (zone === 'brightness') swipe.current = { mode: 'brightness', start: getBrightness(), last: -1 };
+      // Brightness and volume only where the phone lets the app change them.
+      const zone = fullscreen && deviceControls ? swipeZone(e.x, size.current.width) : null;
+      if (zone === 'brightness') swipe.current = { mode: 'brightness', start: toPerceived(getBrightness()), last: -1 };
       else if (zone === 'volume') swipe.current = { mode: 'volume', start: getVolume(), last: -1 };
       else swipe.current = { mode: 'screen', start: 0, last: 0 };
     },
@@ -117,7 +118,9 @@ export default function GestureLayer({
       const s = swipe.current;
       if (!s || s.mode === 'screen') return;
       let value = levelAfterSwipe(s.start, e.translationY, size.current.height);
-      if (s.mode === 'brightness') setBrightness(value);
+      // Nothing changes until the finger has moved, so the screen never jumps on touch.
+      if (s.last === -1 && Math.abs(e.translationY) < 4) return;
+      if (s.mode === 'brightness') setBrightness(fromPerceived(value));
       else value = setVolume(value);
       // A tick when a swipe reaches either end.
       if ((value === 0 || value === 1) && s.last !== value) tick();
@@ -141,7 +144,7 @@ export default function GestureLayer({
 
   const pinch = usePinchGesture({
     runOnJS: true,
-    enabled: fullscreen && !locked,
+    enabled: gestures && fullscreen && !locked,
     onDeactivate: (e) => {
       if (e.scale > 1.1) onZoom(true);
       else if (e.scale < 0.9) onZoom(false);

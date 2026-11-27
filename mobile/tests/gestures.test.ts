@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fillScale, isVertical, levelAfterSwipe, nextSkip, swipeZone, tapZone } from '../player/gestures.ts';
+import { fillScale, fromPerceived, isVertical, levelAfterSwipe, nextSkip, swipeZone, tapZone, toPerceived } from '../player/gestures.ts';
 
 test('thirds for taps, 40/20/40 for swipes', () => {
   assert.equal(tapZone(10, 900), 'left');
@@ -49,5 +49,19 @@ test('the edges of a small player count as skip sides', () => {
 // Review focus: scrubbing (horizontal) is never a brightness/volume swipe.
 test('a mostly horizontal drag is not vertical', () => {
   assert.equal(isVertical(120, 40), false);
-  assert.equal(isVertical(40, 59), false);
+  assert.equal(isVertical(40, 39), false);
+});
+
+// A swipe often starts a little diagonal (dx 10, dy 14 when it activates): still a swipe.
+test('a slightly diagonal start counts as vertical', () => {
+  assert.equal(isVertical(10, 14), true);
+  assert.equal(isVertical(40, 59), true);
+});
+
+test('brightness swipes run on the curve eyes see, and come back exactly', () => {
+  for (const v of [0, 0.1, 0.25, 0.5, 0.9, 1]) assert.ok(Math.abs(fromPerceived(toPerceived(v)) - v) < 1e-9);
+  // A dim backlight looks brighter than its number: the swipe gives the low end more room.
+  assert.ok(toPerceived(0.1) > 0.3);
+  assert.equal(toPerceived(-1), 0);
+  assert.equal(fromPerceived(2), 1);
 });

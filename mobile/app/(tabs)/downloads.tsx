@@ -86,7 +86,7 @@ function Row({ d }: { d: StoredDownload }) {
 
   const status =
     d.state === 'downloading'
-      ? `${Math.round(d.progress * 100)}% · ${formatBytes(d.speed)}/s${d.eta ? ` · ${formatEta(d.eta)} left` : ''}`
+      ? `${Math.round(d.progress * 100)}%${d.speed ? ` · ${formatBytes(d.speed)}/s` : ' · starting…'}${d.eta ? ` · ${formatEta(d.eta)}` : ''}`
       : d.state === 'queued'
         ? d.held
           ? 'Saved for later'

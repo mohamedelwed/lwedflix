@@ -24,3 +24,18 @@ test('without a page, only with and without', () => {
   const v = headerVariants({ 'User-Agent': 'X', Accept: '*/*' });
   assert.equal(v.length, 2);
 });
+
+import { withPlaylistQuery } from '../downloads/asking.ts';
+
+test('a piece gets the playlist’s token it lacks', () => {
+  assert.equal(
+    withPlaylistQuery('https://cdn.example/content/a/page-0.html', 'https://cdn.example/pl/abc?token=T1'),
+    'https://cdn.example/content/a/page-0.html?token=T1'
+  );
+});
+
+test('a piece keeps its own query, and nothing is added twice', () => {
+  assert.equal(withPlaylistQuery('https://cdn.example/seg.ts?token=MINE', 'https://cdn.example/pl?token=T1'), null);
+  assert.equal(withPlaylistQuery('https://cdn.example/seg.ts?x=1', 'https://cdn.example/pl?token=T1'), 'https://cdn.example/seg.ts?x=1&token=T1');
+  assert.equal(withPlaylistQuery('https://cdn.example/seg.ts', 'https://cdn.example/pl'), null);
+});

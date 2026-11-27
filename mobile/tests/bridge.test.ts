@@ -75,9 +75,9 @@ test('a frame that goes away clears the state, only if it was the player', () =>
 test('captured streams and problems reach the app', () => {
   const h = wrapperHarness('tok');
   const f = h.frame();
-  h.fromFrame(f, { lwf: 'tok', t: 'send', c: 'stream', p: { url: 'https://cdn.example/master.m3u8', type: 'application/vnd.apple.mpegurl', size: 900, frame: 'https://vidsrc.sh/x' } });
+  h.fromFrame(f, { lwf: 'tok', t: 'send', c: 'stream', p: { url: 'https://cdn.example/master.m3u8', type: 'application/vnd.apple.mpegurl', size: 900, frame: 'https://vidsrc.sh/x', ua: 'Mozilla/5.0 (Linux; Android 15; wv)' } });
   h.fromFrame(f, { lwf: 'tok', t: 'send', c: 'player:problem', p: { reason: 'nonsense' } });
-  assert.deepEqual(h.toApp.find((m) => m.c === 'stream')?.p, { url: 'https://cdn.example/master.m3u8', type: 'application/vnd.apple.mpegurl', size: 900, frame: 'https://vidsrc.sh/x' });
+  assert.deepEqual(h.toApp.find((m) => m.c === 'stream')?.p, { url: 'https://cdn.example/master.m3u8', type: 'application/vnd.apple.mpegurl', size: 900, frame: 'https://vidsrc.sh/x', ua: 'Mozilla/5.0 (Linux; Android 15; wv)' });
   assert.deepEqual(h.toApp.find((m) => m.c === 'problem')?.p, { reason: 'unavailable' });
 });
 

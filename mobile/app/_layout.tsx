@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, type ErrorBoundaryProps } from 'expo-router';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -60,5 +61,25 @@ export default function RootLayout() {
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * A screen that breaks shows what went wrong instead of closing the app
+ * (a release build otherwise quits on any uncaught error). Try again
+ * re-renders it.
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background, padding: 24, paddingTop: 80, gap: 12 }}>
+      <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: '800' }}>Something went wrong</Text>
+      <Text style={{ color: colors.muted, fontSize: 14 }}>This screen hit an error. Try again, or send a screenshot of this to whoever looks after Lwedflix.</Text>
+      <ScrollView style={{ maxHeight: 220, backgroundColor: colors.card, borderRadius: 12, padding: 12 }}>
+        <Text selectable style={{ color: colors.white70, fontSize: 12, fontFamily: 'monospace' }}>{String(error?.message ?? error)}</Text>
+      </ScrollView>
+      <Pressable onPress={retry} style={{ alignSelf: 'flex-start', backgroundColor: colors.accent, paddingHorizontal: 20, height: 44, borderRadius: 999, justifyContent: 'center' }}>
+        <Text style={{ color: '#000', fontWeight: '800' }}>Try again</Text>
+      </Pressable>
+    </View>
   );
 }

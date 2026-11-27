@@ -20,6 +20,8 @@
   if (window === window.top) return; // the wrapper page has the router
 
   var top = window.top;
+  // The page's own fetch, before the hooks below: downloads go through it.
+  var pageFetch = window.fetch;
   var post = function (message) {
     message.lwf = TOKEN;
     try {
@@ -255,6 +257,38 @@
     } catch (e) {}
   }, 2000);
 
+  // ---- downloads through the player's own browser ----
+  // Stream servers refuse anything but the browser that plays (its cookies,
+  // its connection), so a download asks this frame for each piece and gets
+  // the bytes back as base64 (wrapper.html relays both ways).
+  var fetchForDownload = function (m) {
+    var reply = function (p) {
+      p.id = m.id;
+      post({ t: 'send', c: 'fetched', p: p });
+    };
+    if (!pageFetch) return reply({ ok: false, status: 0 });
+    var init = m.range ? { headers: { Range: 'bytes=' + m.range.offset + '-' + (m.range.offset + m.range.length - 1) } } : {};
+    pageFetch.call(window, m.url, init).then(
+      function (res) {
+        if (!res.ok) return reply({ ok: false, status: res.status });
+        return res.blob().then(function (blob) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            var s = String(reader.result);
+            reply({ ok: true, data: s.slice(s.indexOf(',') + 1) });
+          };
+          reader.onerror = function () {
+            reply({ ok: false, status: 0 });
+          };
+          reader.readAsDataURL(blob);
+        });
+      },
+      function () {
+        reply({ ok: false, status: 0 });
+      }
+    );
+  };
+
   // ---- the player bridge: electron/preload.js over postMessage ----
   var listeners = {};
   var pending = {};
@@ -268,6 +302,8 @@
       delete pending[message.id];
       if (message.ok) call.resolve(message.v);
       else call.reject(new Error(message.v || 'failed'));
+    } else if (message.t === 'fetch') {
+      fetchForDownload(message);
     } else if (message.t === 'event') {
       var set = listeners[message.c] || [];
       for (var i = 0; i < set.length; i++) set[i]({}, message.p);

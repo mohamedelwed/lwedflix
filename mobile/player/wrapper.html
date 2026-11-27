@@ -56,8 +56,15 @@
       case 'player:problem':
         toApp('problem', { reason: m.p && m.p.reason === 'error' ? 'error' : 'unavailable' });
         break;
+      case 'fetched':
+        if (m.p && typeof m.p.id === 'number') {
+          toApp('fetched', { id: m.p.id, ok: !!m.p.ok, status: Number(m.p.status) || 0, data: m.p.ok ? String(m.p.data || '') : '' });
+        }
+        break;
       case 'stream':
         if (m.p && typeof m.p.url === 'string') {
+          streamFrames[String(m.p.frame || '')] = source;
+          lastStreamFrame = source;
           toApp('stream', {
             url: String(m.p.url).slice(0, 4096),
             type: String(m.p.type || '').slice(0, 100),
@@ -69,6 +76,19 @@
         break;
     }
   });
+
+  // Downloads: the frame that loaded the stream fetches its pieces (shim.js).
+  var streamFrames = {};
+  var lastStreamFrame = null;
+  window.__lwfFetch = function (id, frame, url, range) {
+    var target = streamFrames[frame] || lastStreamFrame;
+    if (!target) return toApp('fetched', { id: id, ok: false, status: 0, data: '' });
+    try {
+      target.postMessage({ lwf: TOKEN, t: 'fetch', id: id, url: String(url), range: range || null }, '*');
+    } catch (e) {
+      toApp('fetched', { id: id, ok: false, status: 0, data: '' });
+    }
+  };
 
   window.__lwfCommand = function (raw) {
     var command = protocol.cleanCommand(raw);

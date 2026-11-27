@@ -8,7 +8,7 @@ import type { DownloadMeta, Quality, StreamOption } from '@shared/lib/downloads'
 import type { CapturedStream } from '@/player/types';
 import * as Network from 'expo-network';
 import { DownloadError, saveHls } from './hlsJob.ts';
-import { headerVariants } from './asking.ts';
+import { headerVariants, withPlaylistQuery } from './asking.ts';
 import { getSettings, onSettings } from './settings';
 import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updateDownload, type StoredDownload } from './store';
 
@@ -197,6 +197,12 @@ interface Run {
   samples: [number, number][];
   startedAt: number;
   resumable?: LegacyFS.DownloadResumable;
+  /** The hidden player this download runs in, once found. */
+  session?: DownloadSession;
+  /** Set once the server refused the app directly: every piece goes through the player. */
+  viaPlayer?: boolean;
+  /** Set once pieces only load with the playlist's query (its token) added. */
+  inheritQuery?: boolean;
 }
 
 const runs = new Map<string, Run>();
@@ -209,9 +215,16 @@ export interface ResolveTarget {
   season: number;
   episode: number;
 }
-type Resolver = (target: ResolveTarget) => Promise<CapturedStream>;
-let resolver: Resolver | null = null;
-export function setEpisodeResolver(fn: Resolver | null) {
+/** A hidden player kept open for one download (EpisodeResolver.tsx). */
+export interface DownloadSession {
+  stream: CapturedStream;
+  /** Fetches through the player's own browser: what servers that refuse everyone else accept. */
+  fetch(url: string, range?: { offset: number; length: number } | null): Promise<Uint8Array>;
+  close(): void;
+}
+type SessionOpener = (target: ResolveTarget) => Promise<DownloadSession>;
+let resolver: SessionOpener | null = null;
+export function setSessionOpener(fn: SessionOpener | null) {
   resolver = fn;
   if (fn) pump();
 }
@@ -455,7 +468,11 @@ async function runJob(id: string) {
     if (!run.source) {
       const job = getDownload(id)!;
       updateDownload(id, { state: 'resolving' });
-      const found = await resolver!({ mediaType: job.mediaType === 'movie' ? 'movie' : 'tv', mediaId: job.mediaId!, season: job.target!.season, episode: job.target!.episode });
+      const session = await resolver!({ mediaType: job.mediaType === 'movie' ? 'movie' : 'tv', mediaId: job.mediaId!, season: job.target!.season, episode: job.target!.episode });
+      if (run.cancelled) return void session.close();
+      run.session = session;
+      const found = session.stream;
+      console.log('[lwf-dl] stream found', found.url.slice(0, 60), 'has query:', found.url.includes('?'), 'frame', found.frame.slice(0, 60));
       noteUserAgent(found.ua);
       const kind = classify(found.url, found.type, found.size || undefined);
       run.source = { url: found.url, kind: kind === 'file' ? 'file' : 'hls', headers: headersFor(found.frame) };
@@ -466,6 +483,7 @@ async function runJob(id: string) {
     if (run.source.kind === 'hls') await downloadHls(id, run);
     else await downloadFile(id, run);
   } catch (err) {
+    console.log('[lwf-dl] job failed', String(err));
     const job = getDownload(id);
     if (run.cancelled || !job) return;
     removeFiles(id, true);
@@ -481,6 +499,11 @@ async function runJob(id: string) {
     updateDownload(id, { state: 'failed', error: message, speed: 0, eta: null, fileUri: null });
   } finally {
     const state = getDownload(id)?.state;
+    // A paused download keeps its player; anything else is done with it.
+    if (state !== 'paused') {
+      run.session?.close();
+      run.session = undefined;
+    }
     if (state !== 'paused' && state !== 'queued') runs.delete(id);
   }
 }
@@ -557,6 +580,62 @@ async function fetchBytes(
   throw lastError instanceof Error ? lastError : new Error('fetch failed');
 }
 
+/**
+ * One piece of a download: straight from the server while it lets the app,
+ * through the hidden player once it doesn't (and from then on).
+ */
+async function getPiece(run: Run, url: string, range?: { offset: number; length: number } | null): Promise<Uint8Array> {
+  // The player adds the playlist's token to every piece; so do we, once that's what works.
+  const tokened = withPlaylistQuery(url, run.source!.url);
+  if (run.inheritQuery && tokened) url = tokened;
+  if (run.session && run.viaPlayer) return viaPlayer(run, url, range);
+  try {
+    return await fetchBytes(url, run.source!, range, run.controller.signal);
+  } catch (err) {
+    if (run.cancelled) throw err;
+    if (tokened && !run.inheritQuery) {
+      try {
+        // Every way of asking again, from the first: the token may be all that was missing.
+        const source = run.source!;
+        const asking = { headers: (source.variants ?? [source.headers])[0], variants: source.variants };
+        const bytes = await fetchBytes(tokened, asking, range, run.controller.signal);
+        source.headers = asking.headers;
+        run.inheritQuery = true;
+        console.log('[lwf-dl] pieces need the playlist token');
+        return bytes;
+      } catch {
+        // Not that either: through the player.
+      }
+    }
+    console.log('[lwf-dl] direct failed', String(err), url.slice(0, 120));
+    if (!run.session) throw err;
+    run.viaPlayer = true;
+    return viaPlayer(run, tokened ?? url, range);
+  }
+}
+
+async function viaPlayer(run: Run, url: string, range?: { offset: number; length: number } | null): Promise<Uint8Array> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    if (run.cancelled) throw new Error('cancelled');
+    try {
+      const bytes = await run.session!.fetch(url, range);
+      console.log('[lwf-dl] via player ok', bytes.length, url.slice(0, 80));
+      await throttle(bytes.length);
+      return bytes;
+    } catch (err) {
+      lastError = err;
+      const status = (err as { status?: number }).status ?? 0;
+      console.log('[lwf-dl] via player failed', String(err), status, url.slice(0, 60), 'tokened:', url.includes('token='));
+      if (GONE.has(status) && attempt >= 2) {
+        throw new DownloadError(`The server refused the download (error ${status} from ${hostOf(url)}), even through the player. Tap retry to try a fresh stream, or try another server.`);
+      }
+      await sleep(Math.min(8000, 500 * 2 ** attempt));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('fetch failed');
+}
+
 async function downloadHls(id: string, run: Run) {
   const source = run.source!;
   const signal = run.controller.signal;
@@ -566,7 +645,7 @@ async function downloadHls(id: string, run: Run) {
   const result = await saveHls(source.url, file.uri, {
     variant: run.variant,
     maxHeight: job.target?.height ?? null,
-    get: (url, range) => fetchBytes(url, source, range, signal),
+    get: (url, range) => getPiece(run, url, range),
     open: openForWriting,
     gate: () => gate(run),
     cancelled: () => run.cancelled,
@@ -585,7 +664,12 @@ async function downloadFile(id: string, run: Run) {
   const file = new File(root(), `${safeName(job.title)}-${id.slice(0, 8)}.${ext}`);
   updateDownload(id, { fileUri: file.uri, fileName: file.name });
   // One byte first, to find the way of asking the server accepts.
-  await fetchBytes(source.url, source, { offset: 0, length: 1 }, run.controller.signal);
+  try {
+    await fetchBytes(source.url, source, { offset: 0, length: 1 }, run.controller.signal);
+  } catch (err) {
+    if (!run.session) throw err;
+    return downloadFileViaPlayer(id, run, file);
+  }
   run.resumable = LegacyFS.createDownloadResumable(source.url, file.uri, { headers: source.headers }, ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
     const total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : null;
     if (total) updateDownload(id, { totalBytes: total });
@@ -602,4 +686,27 @@ async function continueFile(id: string, run: Run, first = false) {
   if (result.status >= 400) throw new DownloadError('The server stopped serving this file. Play it again in the player, then download it.');
   const size = new File(result.uri).size ?? 0;
   updateDownload(id, { state: 'done', progress: 1, speed: 0, eta: null, finishedAt: Date.now(), bytes: size, totalBytes: size });
+}
+
+const FILE_CHUNK = 4 * 1024 * 1024;
+
+/** A plain file the server only gives the player: fetched through it in 4 MB pieces. */
+async function downloadFileViaPlayer(id: string, run: Run, file: File) {
+  run.viaPlayer = true;
+  const handle = await openForWriting(file.uri);
+  let offset = 0;
+  try {
+    for (;;) {
+      await gate(run);
+      if (run.cancelled) return;
+      const piece = await viaPlayer(run, run.source!.url, { offset, length: FILE_CHUNK });
+      await handle.write(piece, 0, piece.length, offset);
+      offset += piece.length;
+      tick(id, run, offset, 0);
+      if (piece.length < FILE_CHUNK) break;
+    }
+  } finally {
+    await handle.close();
+  }
+  updateDownload(id, { state: 'done', progress: 1, speed: 0, eta: null, finishedAt: Date.now(), bytes: offset, totalBytes: offset });
 }

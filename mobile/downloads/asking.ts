@@ -16,3 +16,26 @@ export function headerVariants(base: Record<string, string>): Record<string, str
   variants.push(bare);
   return variants;
 }
+
+/**
+ * A piece's address with the playlist's query carried over: some players
+ * add the playlist's access token (`?token=…`) to every piece they load,
+ * and their servers refuse the bare address the playlist lists. Only what
+ * the piece lacks is added; null when there's nothing to add.
+ */
+export function withPlaylistQuery(url: string, playlistUrl: string): string | null {
+  try {
+    const piece = new URL(url);
+    const from = new URL(playlistUrl);
+    let added = false;
+    from.searchParams.forEach((value, key) => {
+      if (!piece.searchParams.has(key)) {
+        piece.searchParams.append(key, value);
+        added = true;
+      }
+    });
+    return added ? piece.toString() : null;
+  } catch {
+    return null;
+  }
+}

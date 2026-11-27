@@ -22,6 +22,9 @@ export const js = {
   load: (url: string, autoplay: boolean) =>
     `${autoplay ? 'window.__lwfAutoplay && window.__lwfAutoplay();' : ''}window.__lwfLoad && window.__lwfLoad(${JSON.stringify(url)}); true;`,
   autoplay: () => 'window.__lwfAutoplay && window.__lwfAutoplay(); true;',
+  /** Asks the frame that loaded a stream to fetch a piece of it (downloads). */
+  fetch: (id: number, frame: string, url: string, range: { offset: number; length: number } | null) =>
+    `window.__lwfFetch && window.__lwfFetch(${id}, ${JSON.stringify(frame)}, ${JSON.stringify(url)}, ${JSON.stringify(range)}); true;`,
 };
 
 /** Where the wrapper page claims to be; frames see it as their parent's origin. */

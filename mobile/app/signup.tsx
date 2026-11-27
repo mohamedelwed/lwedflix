@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { dialog } from '@/components/Dialog';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@shared/lib/supabase';
 import { isUsernameAvailable } from '@shared/lib/friends';
@@ -46,7 +47,7 @@ export default function SignupScreen() {
     const { error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { display_name: name.trim(), username } } });
     setBusy(false);
     if (error) return setError(error.message);
-    Alert.alert('Check your email', 'Confirm your address from the email we sent, then sign in.', [
+    dialog('Check your email', 'Confirm your address from the email we sent, then sign in.', [
       { text: 'OK', onPress: () => router.replace({ pathname: '/login', params: redirect ? { redirect } : {} }) },
     ]);
   };

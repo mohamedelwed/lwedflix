@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { dialog } from '@/components/Dialog';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -87,7 +88,7 @@ function Row({ d }: { d: StoredDownload }) {
                 : d.error ?? 'Failed';
 
   const confirmRemove = () =>
-    Alert.alert('Delete download?', `${d.title} will be removed from this phone.`, [
+    dialog('Delete download?', `${d.title} will be removed from this phone.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => removeDownload(d.id) },
     ]);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert } from 'react-native';
+import { dialog } from '@/components/Dialog';
 import { router } from 'expo-router';
 import { Download } from 'lucide-react-native';
 import { formatBytes } from '@shared/lib/downloads';
@@ -41,8 +41,8 @@ export default function DownloadButton({
 
   const start = (stream: StreamOption, variant?: number) => {
     const result = startDownload(stream.id, { variant, meta });
-    if (!result.ok) Alert.alert('Couldn’t download', result.error);
-    else Alert.alert('Downloading', `${meta.title} is downloading. You'll find it in Downloads.`, [
+    if (!result.ok) dialog('Couldn’t download', result.error);
+    else dialog('Downloading', `${meta.title} is downloading. You'll find it in Downloads.`, [
       { text: 'OK' },
       { text: 'Open Downloads', onPress: () => router.push('/downloads') },
     ]);
@@ -73,7 +73,7 @@ export default function DownloadButton({
 
   const open = () => {
     if (!playing || !player.current) {
-      Alert.alert('Play it first', 'Downloads save what the player is streaming. Press play, and once the video starts, tap Download.', [
+      dialog('Play it first', 'Downloads save what the player is streaming. Press play, and once the video starts, tap Download.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Play', onPress: onStartPlaying },
       ]);
@@ -81,7 +81,7 @@ export default function DownloadButton({
     }
     const streams = listStreams().filter((s) => s.supported);
     if (streams.length === 0) {
-      Alert.alert('Nothing to download yet', 'Start the video first. If it’s playing and this still shows, try another server.');
+      dialog('Nothing to download yet', 'Start the video first. If it’s playing and this still shows, try another server.');
       return;
     }
     if (streams.length === 1) return void pickQuality(streams[0]);

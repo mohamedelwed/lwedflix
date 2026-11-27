@@ -8,6 +8,7 @@ import * as SystemUI from 'expo-system-ui';
 import { AuthProvider } from '@/lib/auth';
 import { WatchlistProvider } from '@/lib/watchlist';
 import EpisodeResolver from '@/downloads/EpisodeResolver';
+import { DialogHost } from '@/components/Dialog';
 import { startMovieProgressSync } from '@shared/lib/movieProgressSync';
 import { flushWatchHistory } from '@shared/lib/watchHistory';
 import { resumeDownloads } from '@/downloads/engine';
@@ -52,6 +53,7 @@ export default function RootLayout() {
               <Stack.Screen name="signup" options={{ title: 'Create account', presentation: 'modal' }} />
             </Stack>
             <EpisodeResolver />
+            <DialogHost />
           </ThemeProvider>
           </WatchlistProvider>
         </AuthProvider>

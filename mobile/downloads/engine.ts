@@ -30,6 +30,7 @@ const registry = new Registry();
 
 /** Called with every media URL a player frame loads (PlayerView's onStream). */
 export function recordStream(stream: CapturedStream) {
+  if (stream.type === 'element') return void recordElementSource(stream);
   let kind = classify(stream.url, stream.type, stream.size || undefined);
   // A <video src> assignment carries no headers; a video-looking URL there is the film.
   if (!kind && !stream.type && !stream.size && VIDEO_EXT.test(stream.url)) kind = 'file';
@@ -37,9 +38,38 @@ export function recordStream(stream: CapturedStream) {
   registry.add({ frameUrl: stream.frame, url: stream.url, kind, size: stream.size || undefined, requestHeaders: headersFor(stream.frame) });
 }
 
+const probed = new Set<string>();
+
+/**
+ * What a <video> plays. Android's WebView plays HLS by itself, so those
+ * requests never reach the frame's fetch or XHR: the URL may be all there
+ * is. Its name says what it is, or its first bytes do.
+ */
+async function recordElementSource(stream: CapturedStream) {
+  const add = (kind: 'hls' | 'file', size?: number) =>
+    registry.add({ frameUrl: stream.frame, url: stream.url, kind, size, requestHeaders: headersFor(stream.frame) });
+  if (/\.m3u8(\?|#|$)/i.test(stream.url)) return add('hls');
+  if (probed.has(stream.url)) return;
+  probed.add(stream.url);
+  if (probed.size > 200) probed.clear();
+  try {
+    const res = await fetch(stream.url, { headers: { ...headersFor(stream.frame), Range: 'bytes=0-1023' } });
+    if (!res.ok) return;
+    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    const head = Buffer.from(new Uint8Array(await res.arrayBuffer()).subarray(0, 32)).toString('utf8');
+    if (/^﻿?\s*#EXTM3U/.test(head) || /mpegurl/.test(type)) return add('hls');
+    // A whole video, not a segment: "bytes 0-1023/123456789".
+    const total = Number(/\/(\d+)$/.exec(res.headers.get('content-range') ?? '')?.[1]) || Number(res.headers.get('content-length')) || 0;
+    if ((type.startsWith('video/') || VIDEO_EXT.test(stream.url)) && total >= 5 * 1024 * 1024) add('file', total);
+  } catch {
+    // Unreachable from here: nothing to offer.
+  }
+}
+
 /** The player moved on (new title, episode or server). */
 export function clearStreams() {
   registry.clear();
+  probed.clear();
 }
 
 export function listStreams(): StreamOption[] {

@@ -45,3 +45,5 @@ yarn-error.*
 /ios/
 player/bridge.generated.ts
 assets/movie-map.mapdata
+*.apk
+lwedflix-*.zip

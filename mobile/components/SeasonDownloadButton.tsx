@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text } from 'react-native';
+import { dialog } from '@/components/Dialog';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Download } from 'lucide-react-native';
 import Sheet from './Sheet';
@@ -34,7 +35,7 @@ export default function SeasonDownloadButton({
       aired.map((e) => ({ season, episode: e.episode_number, episodeTitle: e.name })),
       { height }
     );
-    Alert.alert(
+    dialog(
       added ? `Season ${season} queued` : 'Already downloaded',
       added
         ? `${added} episode${added > 1 ? 's' : ''} will download one after another${skipped ? ` (${skipped} already there)` : ''}. Keep Lwedflix open while they download.`

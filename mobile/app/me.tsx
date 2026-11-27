@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { dialog } from '@/components/Dialog';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Redirect, router, Stack } from 'expo-router';
 import * as Application from 'expo-application';
@@ -79,7 +80,7 @@ export default function MeScreen() {
           label="Sign out"
           destructive
           onPress={() =>
-            Alert.alert('Sign out?', undefined, [
+            dialog('Sign out?', undefined, [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Sign out',

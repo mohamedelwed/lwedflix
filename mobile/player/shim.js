@@ -39,9 +39,16 @@
   // ---- media capture, for downloads ----
   var seen = {};
   var MEDIA = /\.(m3u8|mpd|mp4|m4v|webm|mov|mkv)(\?|#|$)/i;
+  var isPlaylist = function (text) {
+    return typeof text === 'string' && /^﻿?\s*#EXTM3U/.test(text.slice(0, 16));
+  };
+  var HLS_TYPE = 'application/vnd.apple.mpegurl';
+  // 'element': the URL a <video> or <source> plays. Android's WebView plays
+  // HLS natively, so those requests never pass through fetch or XHR; the
+  // app works out what the URL is (engine.ts).
   var report = function (url, type, size) {
     if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
-    if (!(MEDIA.test(url) || /mpegurl|dash\+xml|^video\//i.test(type || ''))) return;
+    if (!(type === 'element' || MEDIA.test(url) || /mpegurl|dash\+xml|^video\//i.test(type || ''))) return;
     var key = url + '|' + (type || '');
     if (seen[key]) return;
     seen[key] = 1;
@@ -55,7 +62,10 @@
         var absolute = new URL(String(url), location.href).href;
         xhr.addEventListener('load', function () {
           try {
-            report(absolute, xhr.getResponseHeader('content-type'), Number(xhr.getResponseHeader('content-length')) || 0);
+            var type = xhr.getResponseHeader('content-type');
+            // Playlists hide behind other names and types (.txt, .png, text/plain).
+            if ((xhr.responseType === '' || xhr.responseType === 'text') && isPlaylist(xhr.responseText)) type = HLS_TYPE;
+            report(absolute, type, Number(xhr.getResponseHeader('content-length')) || 0);
           } catch (e) {}
         });
       } catch (e) {}
@@ -72,7 +82,19 @@
           var absolute = new URL(String(url), location.href).href;
           promise.then(function (response) {
             try {
-              report(absolute, response.headers.get('content-type'), Number(response.headers.get('content-length')) || 0);
+              var type = response.headers.get('content-type') || '';
+              var size = Number(response.headers.get('content-length')) || 0;
+              report(absolute, type, size);
+              // Not labelled as video: peek at the start for a playlist.
+              if (!/mpegurl|^video\/|^audio\/|^image\//i.test(type) && (size === 0 || size < 4 * 1024 * 1024) && response.body) {
+                var reader = response.clone().body.getReader();
+                reader.read().then(function (chunk) {
+                  try {
+                    reader.cancel();
+                  } catch (e) {}
+                  if (chunk && chunk.value && isPlaylist(String.fromCharCode.apply(null, chunk.value.subarray(0, 16)))) report(absolute, HLS_TYPE, size);
+                }, function () {});
+              }
             } catch (e) {}
           }, function () {});
         } catch (e) {}
@@ -80,22 +102,44 @@
       };
     }
   } catch (e) {}
+  var reportElement = function (value) {
+    try {
+      if (value) report(new URL(String(value), location.href).href, 'element', 0);
+    } catch (e) {}
+  };
+  [window.HTMLMediaElement, window.HTMLSourceElement].forEach(function (Element) {
+    try {
+      var srcDescriptor = Element && Object.getOwnPropertyDescriptor(Element.prototype, 'src');
+      if (srcDescriptor && srcDescriptor.set) {
+        Object.defineProperty(Element.prototype, 'src', {
+          configurable: true,
+          enumerable: srcDescriptor.enumerable,
+          get: srcDescriptor.get,
+          set: function (value) {
+            reportElement(value);
+            return srcDescriptor.set.call(this, value);
+          },
+        });
+      }
+    } catch (e) {}
+  });
   try {
-    var srcDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
-    if (srcDescriptor && srcDescriptor.set) {
-      Object.defineProperty(HTMLMediaElement.prototype, 'src', {
-        configurable: true,
-        enumerable: srcDescriptor.enumerable,
-        get: srcDescriptor.get,
-        set: function (value) {
-          try {
-            report(new URL(String(value), location.href).href, '', 0);
-          } catch (e) {}
-          return srcDescriptor.set.call(this, value);
-        },
-      });
-    }
+    var setAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, value) {
+      try {
+        if (String(name).toLowerCase() === 'src' && (this instanceof HTMLMediaElement || this instanceof HTMLSourceElement)) reportElement(value);
+      } catch (e) {}
+      return setAttribute.apply(this, arguments);
+    };
   } catch (e) {}
+  // And whatever the videos end up playing, however their source was set
+  // (markup, a player library's own path): checked every two seconds.
+  setInterval(function () {
+    try {
+      var videos = document.getElementsByTagName('video');
+      for (var i = 0; i < videos.length; i++) reportElement(videos[i].currentSrc);
+    } catch (e) {}
+  }, 2000);
 
   // ---- the player bridge: electron/preload.js over postMessage ----
   var listeners = {};

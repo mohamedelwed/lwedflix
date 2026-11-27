@@ -4,14 +4,15 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AlertCircle, Download as DownloadIcon, Pause, Play, RotateCw, Trash2, X } from 'lucide-react-native';
+import { AlertCircle, Download as DownloadIcon, Pause, Play, RotateCw, Settings2, Trash2, X } from 'lucide-react-native';
 import { formatBytes, formatDuration, formatEta } from '@shared/lib/downloads';
 import { getMovieFraction } from '@shared/lib/movieProgress';
 import { getShowProgress } from '@shared/lib/episodeProgress';
 import TopBar from '@/components/TopBar';
 import Chip from '@/components/Chip';
 import { EmptyState } from '@/components/States';
-import { cancelDownload, pauseDownload, removeDownload, resumeDownload, retryDownload } from '@/downloads/engine';
+import { cancelDownload, networkAllowed, pauseDownload, removeDownload, resumeDownload, retryDownload, startLater } from '@/downloads/engine';
+import { useDownloadSettings } from '@/downloads/settings';
 import { isActive, useDownloadsList, type StoredDownload } from '@/downloads/store';
 import { imageUrl } from '@/lib/media';
 import { colors, radius, space, type } from '@/theme';
@@ -26,6 +27,8 @@ export default function DownloadsScreen() {
 
   const shown = downloads.filter((d) => (filter === 'all' ? true : filter === 'active' ? isActive(d) : d.mediaType === filter && d.state === 'done'));
   const used = downloads.filter((d) => d.state === 'done').reduce((s, d) => s + (d.bytes || 0), 0);
+  const held = downloads.filter((d) => d.held && d.state === 'queued');
+  useDownloadSettings(); // the rows say "Waiting for Wi-Fi" as the setting changes
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -36,10 +39,19 @@ export default function DownloadsScreen() {
         contentContainerStyle={{ paddingTop: insets.top + 64, paddingBottom: insets.bottom + 100, gap: space.sm }}
         ListHeaderComponent={
           <View style={{ paddingHorizontal: space.lg, gap: space.md, marginBottom: space.md }}>
-            <View>
-              <Text style={styles.title}>Downloads</Text>
-              <Text style={styles.subtitle}>Watch without a connection{used ? ` · ${formatBytes(used)} used` : ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title}>Downloads</Text>
+                <Text style={styles.subtitle}>Watch without a connection{used ? ` · ${formatBytes(used)} used` : ''}</Text>
+              </View>
+              <IconAction onPress={() => router.push('/download-settings')} label="Download settings"><Settings2 size={18} color={colors.foreground} /></IconAction>
             </View>
+            {held.length > 0 && (
+              <Pressable onPress={() => startLater()} style={({ pressed }) => [styles.startAll, pressed && { opacity: 0.8 }]}>
+                <DownloadIcon size={16} color="#000" />
+                <Text style={styles.startAllText}>Start {held.length > 1 ? `all ${held.length} saved for later` : 'the one saved for later'}</Text>
+              </Pressable>
+            )}
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               {(['all', 'movie', 'tv', 'active'] as Filter[]).map((f) => (
                 <Chip key={f} label={f === 'all' ? 'All' : f === 'movie' ? 'Movies' : f === 'tv' ? 'Episodes' : 'In progress'} active={filter === f} onPress={() => setFilter(f)} />
@@ -76,7 +88,13 @@ function Row({ d }: { d: StoredDownload }) {
     d.state === 'downloading'
       ? `${Math.round(d.progress * 100)}% · ${formatBytes(d.speed)}/s${d.eta ? ` · ${formatEta(d.eta)} left` : ''}`
       : d.state === 'queued'
-        ? 'Waiting'
+        ? d.held
+          ? 'Saved for later'
+          : !networkAllowed()
+            ? 'Waiting for Wi-Fi'
+            : d.tries
+              ? 'Trying a fresh stream…'
+              : 'Waiting'
         : d.state === 'resolving'
           ? 'Finding the stream…'
           : d.state === 'paused'
@@ -126,11 +144,13 @@ function Row({ d }: { d: StoredDownload }) {
         )}
       </View>
       <View style={styles.actions}>
-        {d.state === 'downloading' || d.state === 'queued' || d.state === 'resolving' ? (
+        {d.held && d.state === 'queued' ? (
+          <IconAction onPress={() => startLater([d.id])} label="Start"><DownloadIcon size={18} color={colors.accent} /></IconAction>
+        ) : d.state === 'downloading' || d.state === 'queued' || d.state === 'resolving' ? (
           <IconAction onPress={() => pauseDownload(d.id)} label="Pause"><Pause size={18} color={colors.foreground} /></IconAction>
         ) : d.state === 'paused' ? (
           <IconAction onPress={() => resumeDownload(d.id)} label="Resume"><DownloadIcon size={18} color={colors.accent} /></IconAction>
-        ) : (d.state === 'failed' || d.state === 'interrupted') && d.target ? (
+        ) : (d.state === 'failed' || d.state === 'interrupted') && d.mediaId != null ? (
           <IconAction onPress={() => retryDownload(d.id)} label="Retry"><RotateCw size={18} color={colors.foreground} /></IconAction>
         ) : null}
         {isActive(d) ? (
@@ -163,5 +183,7 @@ const styles = StyleSheet.create({
   track: { height: 3, borderRadius: 2, backgroundColor: colors.white10, marginTop: 4, overflow: 'hidden' },
   fill: { height: 3, backgroundColor: colors.accent },
   actions: { gap: space.sm },
+  startAll: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, height: 44, borderRadius: radius.full, backgroundColor: colors.accent },
+  startAllText: { color: '#000', fontWeight: '800', fontSize: 14 },
   iconAction: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white5 },
 });

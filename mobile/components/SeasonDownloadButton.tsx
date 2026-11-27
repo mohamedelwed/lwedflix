@@ -4,15 +4,11 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Download } from 'lucide-react-native';
 import Sheet from './Sheet';
+import { HEIGHTS } from './DownloadButton';
+import { getSettings } from '@/downloads/settings';
 import { enqueueEpisodes } from '@/downloads/engine';
 import { colors, radius } from '@/theme';
 
-const HEIGHTS = [
-  { label: 'Best available', height: null },
-  { label: '1080p', height: 1080 },
-  { label: '720p', height: 720 },
-  { label: '480p (smallest)', height: 480 },
-];
 
 /** Queues a whole season; each episode finds its own stream in turn (src/components/downloads/SeasonDownloadButton.tsx). */
 export default function SeasonDownloadButton({
@@ -29,24 +25,39 @@ export default function SeasonDownloadButton({
   const aired = episodes.filter((e) => !e.air_date || e.air_date <= today);
   if (aired.length === 0) return null;
 
-  const queue = (height: number | null) => {
+  const queue = (height: number | null, later: boolean) => {
     const { added, skipped } = enqueueEpisodes(
       { title: show.name, mediaId: show.id, posterPath: show.posterPath },
       aired.map((e) => ({ season, episode: e.episode_number, episodeTitle: e.name })),
-      { height }
+      { height, later }
     );
     dialog(
-      added ? `Season ${season} queued` : 'Already downloaded',
-      added
-        ? `${added} episode${added > 1 ? 's' : ''} will download one after another${skipped ? ` (${skipped} already there)` : ''}. Keep Lwedflix open while they download.`
-        : 'Every episode of this season is downloaded or on its way.',
-      [{ text: 'OK' }, { text: 'Open Downloads', onPress: () => router.push('/downloads') }]
+      !added ? 'Already downloaded' : later ? `Season ${season} saved for later` : `Season ${season} queued`,
+      !added
+        ? 'Every episode of this season is downloaded or on its way.'
+        : later
+          ? `${added} episode${added > 1 ? 's are' : ' is'} in Downloads${skipped ? ` (${skipped} already there)` : ''}. Start them whenever you like.`
+          : `${added} episode${added > 1 ? 's' : ''} will download one after another${skipped ? ` (${skipped} already there)` : ''}. Keep Lwedflix open while they download.`,
+      [{ text: 'OK', style: 'cancel' }, { text: 'Open Downloads', onPress: () => router.push('/downloads') }]
     );
+  };
+
+  /** Now or later, once the quality is known. */
+  const when = (height: number | null) =>
+    dialog(`Download season ${season}`, `${aired.length} episode${aired.length > 1 ? 's' : ''}, one after another. Each finds its stream when its turn comes.`, [
+      { text: 'Later', onPress: () => queue(height, true) },
+      { text: 'Start now', onPress: () => queue(height, false) },
+    ]);
+
+  const start = () => {
+    const setting = getSettings().quality;
+    if (setting === 'ask') setOpen(true);
+    else when(setting);
   };
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} style={styles.button} hitSlop={6}>
+      <Pressable onPress={start} style={styles.button} hitSlop={6}>
         <Download size={14} color={colors.accent} />
         <Text style={styles.text}>Season</Text>
       </Pressable>
@@ -54,7 +65,7 @@ export default function SeasonDownloadButton({
         visible={open}
         title={`Download season ${season} · ${aired.length} episodes`}
         onClose={() => setOpen(false)}
-        options={HEIGHTS.map((h) => ({ key: String(h.height), label: h.label, onPress: () => queue(h.height) }))}
+        options={HEIGHTS.map((h) => ({ key: String(h.height), label: h.label, onPress: () => setTimeout(() => when(h.height), 250) }))}
       />
     </>
   );

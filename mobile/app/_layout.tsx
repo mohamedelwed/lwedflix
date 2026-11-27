@@ -51,6 +51,7 @@ export default function RootLayout() {
               <Stack.Screen name="offline/[id]" options={{ headerShown: false, orientation: 'all' }} />
               <Stack.Screen name="login" options={{ title: 'Sign in', presentation: 'modal' }} />
               <Stack.Screen name="signup" options={{ title: 'Create account', presentation: 'modal' }} />
+              <Stack.Screen name="download-settings" options={{ title: 'Download settings' }} />
             </Stack>
             <EpisodeResolver />
             <DialogHost />

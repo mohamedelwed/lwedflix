@@ -13,6 +13,10 @@ export interface StoredDownload extends Download {
   fileUri: string | null;
   /** The saved poster's URI. */
   posterUri: string | null;
+  /** Download later: waits until started from Downloads. */
+  held?: boolean;
+  /** Times it looked for a fresh stream after a failure. */
+  tries?: number;
 }
 
 // Read on first use, not at import: localStorage is installed by then.

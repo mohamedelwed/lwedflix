@@ -36,6 +36,120 @@
     };
   } catch (e) {}
 
+  // ---- ad and tracker networks: electron/adblock.js's list ----
+  // On Android the WebView refuses these requests itself (LwfAdBlock.java);
+  // this is the layer iOS has, and a second one on Android: requests and
+  // elements pointing at a blocked domain never load.
+  var BLOCKED = {};
+  (/*__BLOCKED_DOMAINS__*/ []).forEach(function (d) {
+    BLOCKED[d] = 1;
+  });
+  var blockedUrl = function (url) {
+    try {
+      var host = new URL(String(url), location.href).hostname.toLowerCase().replace(/\.$/, '');
+      for (;;) {
+        if (BLOCKED[host]) return true;
+        var dot = host.indexOf('.');
+        if (dot === -1) return false;
+        host = host.slice(dot + 1);
+      }
+    } catch (e) {
+      return false;
+    }
+  };
+  try {
+    var guardedFetch = window.fetch;
+    if (guardedFetch) {
+      window.fetch = function (input) {
+        var url = typeof input === 'string' ? input : input && input.url;
+        if (url && blockedUrl(url)) return Promise.reject(new TypeError('Failed to fetch'));
+        return guardedFetch.apply(this, arguments);
+      };
+    }
+  } catch (e) {}
+  try {
+    var guardedOpen = XMLHttpRequest.prototype.open;
+    var guardedSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__lwfBlocked = blockedUrl(url);
+      return guardedOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function () {
+      if (this.__lwfBlocked) {
+        var xhr = this;
+        setTimeout(function () {
+          try {
+            xhr.dispatchEvent(new Event('error'));
+          } catch (e) {}
+        }, 0);
+        return;
+      }
+      return guardedSend.apply(this, arguments);
+    };
+  } catch (e) {}
+  try {
+    navigator.sendBeacon = (function (send) {
+      return function (url) {
+        return blockedUrl(url) ? true : send.apply(navigator, arguments);
+      };
+    })(navigator.sendBeacon);
+  } catch (e) {}
+  // Scripts, frames and images pointed at a blocked domain, however they're
+  // given their address.
+  var SRC_ELEMENTS = ['HTMLScriptElement', 'HTMLIFrameElement', 'HTMLImageElement', 'HTMLLinkElement'];
+  SRC_ELEMENTS.forEach(function (name) {
+    var Element = window[name];
+    var prop = name === 'HTMLLinkElement' ? 'href' : 'src';
+    try {
+      var d = Element && Object.getOwnPropertyDescriptor(Element.prototype, prop);
+      if (d && d.set) {
+        Object.defineProperty(Element.prototype, prop, {
+          configurable: true,
+          enumerable: d.enumerable,
+          get: d.get,
+          set: function (value) {
+            if (blockedUrl(value)) return;
+            return d.set.call(this, value);
+          },
+        });
+      }
+    } catch (e) {}
+  });
+  var blockedElement = function (node) {
+    if (!node || node.nodeType !== 1) return false;
+    var tag = node.tagName;
+    var url = tag === 'LINK' ? node.getAttribute('href') : tag === 'SCRIPT' || tag === 'IFRAME' || tag === 'IMG' ? node.getAttribute('src') : null;
+    return !!url && blockedUrl(url);
+  };
+  try {
+    var blockSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, value) {
+      var n = String(name).toLowerCase();
+      if ((n === 'src' || n === 'href') && /^(SCRIPT|IFRAME|IMG|LINK)$/.test(this.tagName) && blockedUrl(value)) return;
+      return blockSetAttribute.apply(this, arguments);
+    };
+  } catch (e) {}
+  // And the ones written into the page itself: taken out as they arrive.
+  try {
+    new MutationObserver(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        var added = records[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var node = added[j];
+          if (blockedElement(node)) {
+            if (node.tagName === 'SCRIPT') node.type = 'javascript/blocked';
+            if (node.parentNode) node.parentNode.removeChild(node);
+          } else if (node.nodeType === 1 && node.querySelectorAll) {
+            var inner = node.querySelectorAll('script[src],iframe[src],img[src],link[href]');
+            for (var k = 0; k < inner.length; k++) {
+              if (blockedElement(inner[k]) && inner[k].parentNode) inner[k].parentNode.removeChild(inner[k]);
+            }
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  } catch (e) {}
+
   // ---- media capture, for downloads ----
   var seen = {};
   var MEDIA = /\.(m3u8|mpd|mp4|m4v|webm|mov|mkv)(\?|#|$)/i;
@@ -52,7 +166,7 @@
     var key = url + '|' + (type || '');
     if (seen[key]) return;
     seen[key] = 1;
-    post({ t: 'send', c: 'stream', p: { url: url, type: type || '', size: size || 0, frame: location.href } });
+    post({ t: 'send', c: 'stream', p: { url: url, type: type || '', size: size || 0, frame: location.href, ua: navigator.userAgent } });
   };
   try {
     var open = XMLHttpRequest.prototype.open;

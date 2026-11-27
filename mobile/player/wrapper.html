@@ -63,6 +63,7 @@
             type: String(m.p.type || '').slice(0, 100),
             size: Number(m.p.size) || 0,
             frame: String(m.p.frame || '').slice(0, 2048),
+            ua: String(m.p.ua || '').slice(0, 512),
           });
         }
         break;

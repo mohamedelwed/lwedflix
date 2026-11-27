@@ -51,6 +51,7 @@ const config: ExpoConfig = {
     'expo-sqlite',
     'expo-video',
     './plugins/withReleaseSigning',
+    './plugins/withAdBlock',
     ['expo-splash-screen', { backgroundColor: '#0a0a0a', image: './assets/splash-icon.png', imageWidth: 160 }],
   ],
   experiments: { typedRoutes: false },

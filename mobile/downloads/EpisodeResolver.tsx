@@ -8,7 +8,7 @@ import { classify, Registry } from '@electron/streams';
 import { js, makeToken, shimFor, wrapperFor, WRAPPER_BASE_URL } from '@/player/bridge';
 import { isAllowedPlayerNavigation } from '@/player/navigation';
 import type { CapturedStream } from '@/player/types';
-import { setEpisodeResolver } from './engine';
+import { setEpisodeResolver, type ResolveTarget } from './engine';
 
 // Finds the stream of an episode nobody is watching, for a season download
 // (electron/resolver.js on desktop): an off-screen player loads the
@@ -21,7 +21,7 @@ const WAIT_MS = 45000;
 const SETTLE_MS = 2500;
 
 interface Job {
-  target: { mediaId: number; season: number; episode: number };
+  target: ResolveTarget;
   resolve: (stream: CapturedStream) => void;
   reject: (err: Error) => void;
 }
@@ -33,6 +33,7 @@ export default function EpisodeResolver() {
   const token = useMemo(makeToken, []);
   const registry = useRef(new Registry());
   const firstSeen = useRef(0);
+  const ua = useRef<string | undefined>(undefined);
   const web = useRef<WebViewRef>(null);
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function EpisodeResolver() {
       if (found.length && Date.now() - firstSeen.current >= SETTLE_MS) {
         clearInterval(timer);
         const best = registry.current.get(found.find((s) => s.best)?.id ?? found[0].id)!;
-        finish({ url: best.url, type: best.kind === 'hls' ? 'application/vnd.apple.mpegurl' : '', size: best.size ?? 0, frame: best.frameUrl ?? '', at: Date.now() });
+        finish({ url: best.url, type: best.kind === 'hls' ? 'application/vnd.apple.mpegurl' : '', size: best.size ?? 0, frame: best.frameUrl ?? '', ua: ua.current, at: Date.now() });
         return;
       }
       if (Date.now() - started > WAIT_MS) {
@@ -82,7 +83,7 @@ export default function EpisodeResolver() {
   }, [job, server]);
 
   if (!job) return null;
-  const url = embedUrl(SERVERS[server], 'tv', job.target.mediaId, job.target.season, job.target.episode);
+  const url = embedUrl(SERVERS[server], job.target.mediaType, job.target.mediaId, job.target.season, job.target.episode);
 
   const onMessage = (event: WebViewMessageEvent) => {
     try {
@@ -90,6 +91,7 @@ export default function EpisodeResolver() {
       // It plays off screen: keep it quiet.
       if (message.c === 'state' && message.p && !message.p.muted) web.current?.injectJavaScript(js.command({ action: 'setMuted', muted: true }));
       if (message.c !== 'stream') return;
+      if (message.p.ua) ua.current = message.p.ua;
       const kind = classify(message.p.url, message.p.type, message.p.size || undefined);
       if (kind) registry.current.add({ frameUrl: message.p.frame, url: message.p.url, kind, size: message.p.size || undefined });
     } catch {
@@ -101,7 +103,7 @@ export default function EpisodeResolver() {
     <View style={styles.offscreen} pointerEvents="none">
       <WebView
         ref={web as never}
-        key={`${job.target.mediaId}-${job.target.season}-${job.target.episode}-${server}`}
+        key={`${job.target.mediaType}-${job.target.mediaId}-${job.target.season}-${job.target.episode}-${server}`}
         source={{ html: wrapperFor(token, url, true), baseUrl: WRAPPER_BASE_URL }}
         originWhitelist={['*']}
         injectedJavaScriptBeforeContentLoaded={shimFor(token, Platform.OS)}

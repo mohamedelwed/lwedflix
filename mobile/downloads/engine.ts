@@ -6,7 +6,10 @@ import type { FileHandleLike } from '@electron/mp4';
 import { classify, Registry, titleFor } from '@electron/streams';
 import type { DownloadMeta, Quality, StreamOption } from '@shared/lib/downloads';
 import type { CapturedStream } from '@/player/types';
+import * as Network from 'expo-network';
 import { DownloadError, saveHls } from './hlsJob.ts';
+import { headerVariants } from './asking.ts';
+import { getSettings, onSettings } from './settings';
 import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updateDownload, type StoredDownload } from './store';
 
 // Downloads on the phone, as electron/downloads.js does them on desktop:
@@ -15,13 +18,49 @@ import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updat
 // plain video file is fetched as is. Files live in the app's own storage
 // and play offline (app/offline/[id].tsx).
 
-const RUNNING = 2; // downloads at once; the rest wait
 const ATTEMPTS = 6;
 const GONE = new Set([401, 403, 404, 410, 428]);
-// What the servers see: a phone's browser, like the player's WebView.
-const USER_AGENT =
+/** Times a download refused by its server looks for a fresh stream by itself. */
+const FRESH_STREAM_TRIES = 2;
+// What the servers see: the player's own browser. Stream links are often
+// tied to it, so a download that says it's another browser is refused.
+// Until a player reports its user agent (shim.js), a phone browser's.
+let userAgent =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
 const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv)(\?|#|$)/i;
+
+// ---- Network: Wi-Fi only ------------------------------------------------------
+
+let connected = true;
+let onWifi = true;
+function noteNetwork(state: { isConnected?: boolean | null; type?: Network.NetworkStateType | null }) {
+  connected = state.isConnected !== false;
+  onWifi = state.type === Network.NetworkStateType.WIFI || state.type === Network.NetworkStateType.ETHERNET;
+  pump();
+}
+try {
+  void Network.getNetworkStateAsync().then(noteNetwork, () => {});
+  Network.addNetworkStateListener(noteNetwork);
+} catch {
+  // No network module (tests): always allowed.
+}
+/** Whether downloads may use the connection right now. */
+export const networkAllowed = () => connected && (!getSettings().wifiOnly || onWifi);
+onSettings(() => pump());
+
+// ---- Speed limit: one budget for all downloads together ----------------------
+
+let freeAt = 0;
+async function throttle(bytes: number) {
+  const limit = getSettings().speedLimit;
+  if (!limit) {
+    freeAt = 0;
+    return;
+  }
+  const now = Date.now();
+  freeAt = Math.max(freeAt, now - 1000) + (bytes * 1000) / limit;
+  if (freeAt > now) await sleep(freeAt - now);
+}
 
 
 // ---- Streams the player loaded ---------------------------------------------
@@ -30,6 +69,7 @@ const registry = new Registry();
 
 /** Called with every media URL a player frame loads (PlayerView's onStream). */
 export function recordStream(stream: CapturedStream) {
+  noteUserAgent(stream.ua);
   if (stream.type === 'element') return void recordElementSource(stream);
   let kind = classify(stream.url, stream.type, stream.size || undefined);
   // A <video src> assignment carries no headers; a video-looking URL there is the film.
@@ -76,18 +116,18 @@ export function listStreams(): StreamOption[] {
   return registry.list();
 }
 
+/** The player's browser, as its frames report it. */
+export function noteUserAgent(ua: string | undefined) {
+  if (ua && /^Mozilla\//.test(ua)) userAgent = ua;
+}
+
+/** What the player itself sends with its requests: its browser, its page. */
 function headersFor(frameUrl: string | null): Record<string, string> {
-  const headers: Record<string, string> = { 'User-Agent': USER_AGENT, Accept: '*/*' };
-  if (frameUrl) {
-    try {
-      headers.Referer = frameUrl;
-      headers.Origin = new URL(frameUrl).origin;
-    } catch {
-      // No usable frame URL: send without.
-    }
-  }
+  const headers: Record<string, string> = { 'User-Agent': userAgent, Accept: '*/*' };
+  if (frameUrl) headers.Referer = frameUrl;
   return headers;
 }
+
 
 // ---- Files -------------------------------------------------------------------
 
@@ -142,7 +182,9 @@ async function savePoster(id: string, posterPath: string | null) {
 interface Source {
   url: string;
   kind: 'hls' | 'file';
+  /** What's sent now: the first of `variants` the server accepted. */
   headers: Record<string, string>;
+  variants?: Record<string, string>[];
 }
 
 interface Run {
@@ -160,8 +202,14 @@ interface Run {
 const runs = new Map<string, Run>();
 let running = 0;
 
-/** Finds the stream for a season's episode when its turn comes (EpisodeResolver). */
-type Resolver = (target: { mediaId: number; season: number; episode: number }) => Promise<CapturedStream>;
+/** Finds a title's stream when its download's turn comes (EpisodeResolver). */
+export interface ResolveTarget {
+  mediaType: 'movie' | 'tv';
+  mediaId: number;
+  season: number;
+  episode: number;
+}
+type Resolver = (target: ResolveTarget) => Promise<CapturedStream>;
 let resolver: Resolver | null = null;
 export function setEpisodeResolver(fn: Resolver | null) {
   resolver = fn;
@@ -207,7 +255,9 @@ function newJob(meta: DownloadMeta, kind: 'hls' | 'file', target: StoredDownload
 export async function streamQualities(streamId: string): Promise<Quality[]> {
   const item = registry.get(streamId);
   if (!item || item.kind !== 'hls') return [];
-  const text = Buffer.from(await fetchBytes(item.url, item.requestHeaders)).toString('utf8');
+  const asking = { headers: item.requestHeaders };
+  const text = Buffer.from(await fetchBytes(item.url, asking)).toString('utf8');
+  item.requestHeaders = asking.headers; // what worked, for the download itself
   const playlist = parsePlaylist(text, item.url);
   if (!playlist.master) return [];
   return hlsQualities(playlist, 0).map((q) => ({ ...q, bytes: q.bytes }));
@@ -225,11 +275,40 @@ export function startDownload(streamId: string, options: { variant?: number; met
   return { ok: true, id: job.id };
 }
 
+/**
+ * A movie or an episode that finds its own stream when its turn comes, in
+ * an off-screen player: nobody needs to be watching. `later`: kept until
+ * started from Downloads (startLater).
+ */
+export function enqueueTitle(meta: DownloadMeta, options: { height?: number | null; later?: boolean }): { ok: true; id: string } | { ok: false; error: string } {
+  const exists = getDownloads().find(
+    (d) => d.mediaType === meta.mediaType && d.mediaId === meta.mediaId && (d.season ?? 0) === (meta.season ?? 0) && (d.episode ?? 0) === (meta.episode ?? 0) && (isActive(d) || d.state === 'done')
+  );
+  if (exists) return { ok: false, error: exists.state === 'done' ? 'It’s already downloaded.' : 'It’s already in your downloads.' };
+  const job = newJob(meta, 'hls', { season: meta.season ?? 0, episode: meta.episode ?? 0, height: options.height ?? null });
+  job.held = !!options.later;
+  runs.set(job.id, newRun(null));
+  putDownload(job);
+  void savePoster(job.id, job.posterPath);
+  pump();
+  return { ok: true, id: job.id };
+}
+
+/** Starts downloads kept for later (all of them without ids). */
+export function startLater(ids?: string[]) {
+  for (const d of getDownloads()) {
+    if (!d.held || (ids && !ids.includes(d.id))) continue;
+    if (!runs.has(d.id)) runs.set(d.id, newRun(null));
+    updateDownload(d.id, { held: false });
+  }
+  pump();
+}
+
 /** Queues episodes; each finds its own stream when its turn comes. */
 export function enqueueEpisodes(
   show: { title: string; mediaId: number; posterPath?: string | null },
   episodes: { season: number; episode: number; episodeTitle?: string }[],
-  options: { height?: number | null }
+  options: { height?: number | null; later?: boolean }
 ): { added: number; skipped: number } {
   let added = 0;
   let skipped = 0;
@@ -255,6 +334,7 @@ export function enqueueEpisodes(
       'hls',
       { season: ep.season, episode: ep.episode, height: options.height ?? null }
     );
+    job.held = !!options.later;
     runs.set(job.id, newRun(null));
     putDownload(job);
     void savePoster(job.id, job.posterPath);
@@ -306,14 +386,19 @@ export function removeDownload(id: string) {
   cancelDownload(id);
 }
 
-/** A failed or interrupted download, again: a season's episode finds a fresh stream. */
+/** Where a download finds a fresh stream: its own title, in the off-screen player. */
+const targetOf = (job: StoredDownload): NonNullable<StoredDownload['target']> | null =>
+  job.target ?? (job.mediaId ? { season: job.season ?? 0, episode: job.episode ?? 0, height: null } : null);
+
+/** A failed or interrupted download, again, with a fresh stream (stream links expire). */
 export function retryDownload(id: string) {
   const job = getDownload(id);
   if (!job || isActive(job) || job.state === 'done') return false;
-  if (!job.target) return false; // a stream's signed URL is long dead: play it again instead
+  const target = targetOf(job);
+  if (!target) return false;
   removeFiles(id, true);
   runs.set(id, newRun(null));
-  putDownload({ ...job, state: 'queued', error: null, bytes: 0, progress: 0, fileUri: null, finishedAt: null });
+  putDownload({ ...job, target, state: 'queued', held: false, tries: 0, error: null, bytes: 0, progress: 0, fileUri: null, finishedAt: null });
   pump();
   return true;
 }
@@ -336,9 +421,11 @@ export async function resumeDownloads() {
   for (const job of getDownloads()) {
     if (isActive(job)) {
       if (job.fileUri) removeFiles(job.id, true);
-      if (job.target) {
+      const target = targetOf(job);
+      if (target) {
+        // Starts over with a fresh stream.
         runs.set(job.id, newRun(null));
-        putDownload({ ...job, state: 'queued', bytes: 0, progress: 0, fileUri: null, speed: 0, eta: null });
+        putDownload({ ...job, target, state: 'queued', bytes: 0, progress: 0, fileUri: null, speed: 0, eta: null });
       } else {
         putDownload({ ...job, state: 'interrupted', error: 'Lwedflix was closed before this finished.', speed: 0, eta: null });
       }
@@ -350,8 +437,9 @@ export async function resumeDownloads() {
 }
 
 function pump() {
-  while (running < RUNNING) {
-    const next = [...getDownloads()].reverse().find((d) => d.state === 'queued' && runs.has(d.id) && (runs.get(d.id)!.source || (d.target && resolver)));
+  if (!networkAllowed()) return;
+  while (running < getSettings().parallel) {
+    const next = [...getDownloads()].reverse().find((d) => d.state === 'queued' && !d.held && runs.has(d.id) && (runs.get(d.id)!.source || (d.target && resolver)));
     if (!next) return;
     running++;
     void runJob(next.id).finally(() => {
@@ -367,7 +455,8 @@ async function runJob(id: string) {
     if (!run.source) {
       const job = getDownload(id)!;
       updateDownload(id, { state: 'resolving' });
-      const found = await resolver!({ mediaId: job.mediaId!, season: job.target!.season, episode: job.target!.episode });
+      const found = await resolver!({ mediaType: job.mediaType === 'movie' ? 'movie' : 'tv', mediaId: job.mediaId!, season: job.target!.season, episode: job.target!.episode });
+      noteUserAgent(found.ua);
       const kind = classify(found.url, found.type, found.size || undefined);
       run.source = { url: found.url, kind: kind === 'file' ? 'file' : 'hls', headers: headersFor(found.frame) };
       updateDownload(id, { kind: run.source.kind });
@@ -377,12 +466,22 @@ async function runJob(id: string) {
     if (run.source.kind === 'hls') await downloadHls(id, run);
     else await downloadFile(id, run);
   } catch (err) {
-    if (run.cancelled || !getDownload(id)) return;
+    const job = getDownload(id);
+    if (run.cancelled || !job) return;
     removeFiles(id, true);
-    const message = err instanceof DownloadError ? err.message : 'The download failed. Check your connection, then play the title again and download it.';
+    // Refused or broken off: look for a fresh stream by itself, a couple of times.
+    const target = targetOf(job);
+    const tries = (job.tries ?? 0) + 1;
+    if (target && tries <= FRESH_STREAM_TRIES) {
+      runs.set(id, newRun(null));
+      updateDownload(id, { target, tries, state: 'queued', bytes: 0, progress: 0, speed: 0, eta: null, fileUri: null });
+      return;
+    }
+    const message = err instanceof DownloadError ? err.message : 'The download failed. Check your connection, then tap retry.';
     updateDownload(id, { state: 'failed', error: message, speed: 0, eta: null, fileUri: null });
   } finally {
-    if (getDownload(id)?.state !== 'paused') runs.delete(id);
+    const state = getDownload(id)?.state;
+    if (state !== 'paused' && state !== 'queued') runs.delete(id);
   }
 }
 
@@ -397,28 +496,58 @@ function tick(id: string, run: Run, bytes: number, progress: number) {
   updateDownload(id, { bytes, progress, speed, eta });
 }
 
-function gate(run: Run): Promise<void> {
-  return run.paused ? new Promise((resolve) => run.waiters.push(resolve)) : Promise.resolve();
+/** Waits while the download is paused, or while it may not use the connection (Wi-Fi only). */
+async function gate(run: Run): Promise<void> {
+  while (!run.cancelled && (run.paused || !networkAllowed())) {
+    if (run.paused) await new Promise<void>((resolve) => run.waiters.push(resolve));
+    else await sleep(2000);
+  }
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function fetchBytes(url: string, headers: Record<string, string>, range?: { offset: number; length: number } | null, signal?: AbortSignal): Promise<Uint8Array> {
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return 'the server';
+  }
+};
+
+/**
+ * One request, retried; a refusal tries the other ways of asking first
+ * (headerVariants), and the one that works is kept for the rest.
+ */
+async function fetchBytes(
+  url: string,
+  asking: { headers: Record<string, string>; variants?: Record<string, string>[] },
+  range?: { offset: number; length: number } | null,
+  signal?: AbortSignal
+): Promise<Uint8Array> {
+  asking.variants ??= headerVariants(asking.headers);
   let lastError: unknown;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new Error('cancelled');
     try {
       const res = await fetch(url, {
-        headers: range ? { ...headers, Range: `bytes=${range.offset}-${range.offset + range.length - 1}` } : headers,
+        headers: range ? { ...asking.headers, Range: `bytes=${range.offset}-${range.offset + range.length - 1}` } : asking.headers,
         signal,
       });
       if (!res.ok) {
-        if (GONE.has(res.status) && attempt >= 1) {
-          throw new DownloadError('The server stopped serving this stream. Play it again in the player, then download it.');
+        if (GONE.has(res.status)) {
+          const next = asking.variants[asking.variants.indexOf(asking.headers) + 1];
+          if (next) {
+            asking.headers = next;
+            attempt--; // another way of asking isn't a failed attempt
+            continue;
+          }
+          if (attempt >= 1) throw new DownloadError(`The server refused the download (error ${res.status} from ${hostOf(url)}). Tap retry to try a fresh stream, or download from another server.`);
         }
         throw new Error(`HTTP ${res.status}`);
       }
-      return new Uint8Array(await res.arrayBuffer());
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      await throttle(bytes.length);
+      return bytes;
     } catch (err) {
       if (err instanceof DownloadError) throw err;
       lastError = err;
@@ -437,7 +566,7 @@ async function downloadHls(id: string, run: Run) {
   const result = await saveHls(source.url, file.uri, {
     variant: run.variant,
     maxHeight: job.target?.height ?? null,
-    get: (url, range) => fetchBytes(url, source.headers, range, signal),
+    get: (url, range) => fetchBytes(url, source, range, signal),
     open: openForWriting,
     gate: () => gate(run),
     cancelled: () => run.cancelled,
@@ -455,6 +584,8 @@ async function downloadFile(id: string, run: Run) {
   const ext = source.url.match(VIDEO_EXT)?.[1]?.toLowerCase() ?? 'mp4';
   const file = new File(root(), `${safeName(job.title)}-${id.slice(0, 8)}.${ext}`);
   updateDownload(id, { fileUri: file.uri, fileName: file.name });
+  // One byte first, to find the way of asking the server accepts.
+  await fetchBytes(source.url, source, { offset: 0, length: 1 }, run.controller.signal);
   run.resumable = LegacyFS.createDownloadResumable(source.url, file.uri, { headers: source.headers }, ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
     const total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : null;
     if (total) updateDownload(id, { totalBytes: total });

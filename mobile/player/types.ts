@@ -21,6 +21,8 @@ export interface CapturedStream {
   size: number;
   /** The frame that loaded it: its URL is the Referer the server wants. */
   frame: string;
+  /** The player's browser (its user agent): stream links are often tied to it. */
+  ua?: string;
   at: number;
 }
 

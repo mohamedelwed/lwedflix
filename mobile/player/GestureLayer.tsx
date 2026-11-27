@@ -69,13 +69,14 @@ export default function GestureLayer({
     bubbleOpacity.setValue(1);
     if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
     bubbleTimer.current = setTimeout(() => {
-      Animated.timing(bubbleOpacity, { toValue: 0, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(() => setBubble(null));
+      // Only a fade that ran to the end clears the bubble: a new skip stops it midway.
+      Animated.timing(bubbleOpacity, { toValue: 0, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(({ finished }) => finished && setBubble(null));
     }, 600);
   };
 
   const singleTap = useTapGesture({
     runOnJS: true,
-    maxDuration: 250,
+    maxDuration: 500,
     onActivate: (e) => {
       // Mid-streak, single taps on the same side keep adding, as on YouTube.
       const side = tapZone(e.x, size.current.width);

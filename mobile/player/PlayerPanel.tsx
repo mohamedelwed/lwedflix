@@ -17,6 +17,7 @@ export interface PanelData {
   speeds: number[];
   rate: number;
   serverControls: boolean;
+  gestures: boolean;
 }
 
 export interface PanelActions {
@@ -24,6 +25,7 @@ export interface PanelActions {
   pickTrack(index: number): void;
   pickSpeed(rate: number): void;
   setServerControls(on: boolean): void;
+  setGestures(on: boolean): void;
 }
 
 const TABS: { key: PanelTab; label: string; icon: typeof Server }[] = [
@@ -166,6 +168,14 @@ function PanelBody({
         )}
 
         {tab === 'more' && (
+          <>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={styles.rowLabel}>Gestures</Text>
+              <Text style={styles.rowDetail}>Double-tap the sides to skip 10 s; in fullscreen, swipe up and down on the left for brightness, on the right for volume.</Text>
+            </View>
+            <Switch value={data.gestures} onValueChange={actions.setGestures} trackColor={{ true: colors.accent, false: colors.white20 }} thumbColor="#fff" />
+          </View>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={styles.rowLabel}>Server’s own controls</Text>
@@ -173,6 +183,7 @@ function PanelBody({
             </View>
             <Switch value={data.serverControls} onValueChange={actions.setServerControls} trackColor={{ true: colors.accent, false: colors.white20 }} thumbColor="#fff" />
           </View>
+          </>
         )}
       </ScrollView>
     </View>

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { colors } from '@/theme';
+import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { formatTimestamp } from '@shared/lib/watchRoom';
+import { colors, radius } from '@/theme';
 
 /** The seek bar: drag or tap anywhere on it; seeks when released. */
 export default function SeekBar({
@@ -57,7 +58,18 @@ export default function SeekBar({
         onScrub?.(null);
       }}
     >
-      <View style={styles.track}>
+      {/* While dragging: the time, large, above the finger. */}
+      {scrub !== null && (
+        <View pointerEvents="none" style={[styles.bubbleWrap, { left: `${shown * 100}%` }]}>
+          <View style={styles.bubble}>
+            <Text style={styles.bubbleText}>
+              {formatTimestamp(shown * duration)}
+              <Text style={styles.bubbleTotal}> / {formatTimestamp(duration)}</Text>
+            </Text>
+          </View>
+        </View>
+      )}
+      <View style={[styles.track, scrub !== null && styles.trackActive]}>
         <View style={[styles.buffered, { width: `${bufferedFraction * 100}%` }]} />
         <View style={[styles.fill, { width: `${shown * 100}%` }]} />
       </View>
@@ -69,6 +81,11 @@ export default function SeekBar({
 const styles = StyleSheet.create({
   hit: { height: 28, justifyContent: 'center' },
   track: { height: 4, borderRadius: 2, backgroundColor: colors.white20, overflow: 'hidden' },
+  trackActive: { height: 8, borderRadius: 4 },
+  bubbleWrap: { position: 'absolute', bottom: 30, width: 0, alignItems: 'center', overflow: 'visible' },
+  bubble: { position: 'absolute', bottom: 0, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.md, backgroundColor: 'rgba(0,0,0,0.8)', borderWidth: 1, borderColor: colors.white20, width: 150, alignItems: 'center' },
+  bubbleText: { color: '#fff', fontSize: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bubbleTotal: { color: colors.white70, fontSize: 13, fontWeight: '600' },
   buffered: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: 'rgba(255,255,255,0.35)' },
   fill: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: colors.accent },
   thumb: { position: 'absolute', width: 14, height: 14, borderRadius: 7, marginLeft: -7, backgroundColor: colors.accent },

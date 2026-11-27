@@ -4,12 +4,17 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import type { WebViewRef } from '@/player/bridge';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Captions, ChevronLeft, Gauge, Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Server, SkipForward, SlidersHorizontal } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { Captions, ChevronLeft, Gauge, Lock, LockOpen, Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Server, SkipForward, SlidersHorizontal } from 'lucide-react-native';
 import { PROVIDERS, embedUrl } from '@shared/lib/providers';
 import { formatTimestamp } from '@shared/lib/watchRoom';
 import { js, makeToken, shimFor, wrapperFor, WRAPPER_BASE_URL } from './bridge';
 import SeekBar from './SeekBar';
 import PlayerPanel, { type PanelTab } from './PlayerPanel';
+import GestureLayer from './GestureLayer';
+import { fillScale } from './gestures';
+import { resetBrightness } from './device';
+import { setPlayerSettings, usePlayerSettings } from './playerSettings';
 import type { CapturedStream, PlayableMedia, PlayerCommand, PlayerHandle, PlayerState } from './types';
 import { isAllowedPlayerNavigation } from './navigation';
 import { clearStreams, recordStream, setWatching } from '@/downloads/engine';
@@ -18,7 +23,7 @@ import { colors, radius, space } from '@/theme';
 // After the viewer taps into the player, how long a server gets to start a
 // stream before the next one is tried (START_TIMEOUT_MS on desktop).
 const START_TIMEOUT_MS = 20000;
-const CONTROLS_HIDE_MS = 3500;
+const CONTROLS_HIDE_MS = 3000;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export interface PlayerViewProps {
@@ -65,6 +70,11 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
     setSheet(tab);
   };
   const [notice, setNotice] = useState<string | null>(null);
+  const { gestures } = usePlayerSettings();
+  // The screen lock (against stray touches) and the picture filling the screen.
+  const [screenLocked, setScreenLocked] = useState(false);
+  const [fill, setFill] = useState(false);
+  const [box, setBox] = useState({ width: 0, height: 0 });
   const [scrubTime, setScrubTime] = useState<number | null>(null);
   const streams = useRef<CapturedStream[]>([]);
   const resumed = useRef(false);
@@ -187,6 +197,15 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
     [nextServer, resumeAt, send]
   );
 
+  useEffect(() => {
+    if (!fullscreen) {
+      resetBrightness();
+      setFill(false);
+      setScreenLocked(false);
+    }
+  }, [fullscreen]);
+  useEffect(() => () => resetBrightness(), []);
+
   const providerIndexRef = useRef(providerIndex);
   providerIndexRef.current = providerIndex;
   const serverControlsRef = useRef(serverControls);
@@ -234,8 +253,11 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
   };
 
   return (
-    <View style={[styles.root, fullscreen && styles.fullscreen]}>
-      <View style={StyleSheet.absoluteFill} onTouchStart={onTouchBeforeReady}>
+    <View style={[styles.root, fullscreen && styles.fullscreen]} onLayout={(e) => setBox({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}>
+      <View
+        style={[StyleSheet.absoluteFill, fullscreen && fill && { transform: [{ scale: fillScale(box.width, box.height) }] }]}
+        onTouchStart={onTouchBeforeReady}
+      >
         <WebView
           ref={web as never}
           source={{ html, baseUrl: WRAPPER_BASE_URL }}
@@ -268,7 +290,49 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
       {overlay}
 
       {/* Over a playing stream with our controls, taps never reach the server's page (its ads). */}
-      {ownControls && <Pressable style={StyleSheet.absoluteFill} onPress={() => (controlsVisible && playing ? setControlsVisible(false) : showControls())} />}
+      {ownControls && (
+        <GestureLayer
+          fullscreen={fullscreen}
+          gestures={gestures}
+          locked={screenLocked}
+          onTap={() => (controlsVisible && playing ? setControlsVisible(false) : showControls())}
+          onSkip={(seconds) => {
+            if (locked) {
+              setNotice('The host has locked playback');
+              return false;
+            }
+            send({ action: 'seekBy', delta: seconds });
+            return true;
+          }}
+          onFullscreen={onFullscreenChange}
+          onZoom={setFill}
+        />
+      )}
+
+      {/* With the controls hidden, a thin line still shows how far along it is. */}
+      {ownControls && !controlsVisible && duration > 0 && (
+        <View pointerEvents="none" style={styles.thinTrack}>
+          <View style={[styles.thinFill, { width: `${Math.min(100, ((state?.time ?? 0) / duration) * 100)}%` }]} />
+        </View>
+      )}
+
+      {/* Locked: only the unlock button answers, when a tap brings it up. */}
+      {ownControls && screenLocked && controlsVisible && (
+        <View style={styles.unlockWrap} pointerEvents="box-none">
+          <Pressable
+            onPress={() => {
+              setScreenLocked(false);
+              void Haptics.selectionAsync().catch(() => {});
+              showControls();
+            }}
+            style={styles.unlock}
+            accessibilityLabel="Unlock the screen"
+          >
+            <LockOpen color="#000" size={16} />
+            <Text style={styles.unlockText}>Tap to unlock</Text>
+          </Pressable>
+        </View>
+      )}
 
       {loading && !ready && (
         <View style={styles.center} pointerEvents="none">
@@ -299,7 +363,7 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
         </View>
       )}
 
-      {ownControls && controlsVisible && (
+      {ownControls && controlsVisible && !screenLocked && (
         <View style={[StyleSheet.absoluteFill, styles.controls]} pointerEvents="box-none">
           <View style={styles.topRow} pointerEvents="box-none">
             {onBack && (
@@ -365,6 +429,16 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
               <IconButton onPress={() => openPanel('more')} label="Player settings">
                 <SlidersHorizontal color="#fff" size={20} />
               </IconButton>
+              <IconButton
+                onPress={() => {
+                  setScreenLocked(true);
+                  void Haptics.selectionAsync().catch(() => {});
+                  showControls();
+                }}
+                label="Lock the screen"
+              >
+                <Lock color="#fff" size={20} />
+              </IconButton>
               <View style={{ flex: 1 }} />
               {onNext && (
                 <Pressable onPress={onNext} style={styles.nextButton}>
@@ -403,6 +477,7 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
           speeds: SPEEDS,
           rate: state?.rate ?? 1,
           serverControls,
+          gestures,
         }}
         actions={{
           pickServer: (i) => {
@@ -414,6 +489,7 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
           setServerControls: (on) => {
             if (on !== serverControls) toggleServerControls();
           },
+          setGestures: (on) => setPlayerSettings({ gestures: on }),
         }}
       />
     </View>
@@ -459,5 +535,10 @@ const styles = StyleSheet.create({
   nextText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   notice: { position: 'absolute', top: 56, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.75)', borderColor: colors.white20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full, maxWidth: '90%' },
   buffering: { position: 'absolute', top: 80, alignSelf: 'center' },
+  thinTrack: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
+  thinFill: { height: 2, backgroundColor: colors.accent },
+  unlockWrap: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.xl },
+  unlock: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accent, paddingHorizontal: 16, height: 40, borderRadius: radius.full },
+  unlockText: { color: '#000', fontWeight: '800', fontSize: 13 },
   noticeText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' },
 });

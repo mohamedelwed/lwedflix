@@ -57,7 +57,7 @@
     "android": "npm run bridge && expo run:android",
     "ios": "npm run bridge && expo run:ios",
     "postinstall": "patch-package && node scripts/build-bridge.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --import ./tests/register.mjs --test \"tests/*.test.ts\"",
     "build:android": "npm run bridge && expo prebuild -p android --no-install && cd android && ./gradlew assembleRelease"
   },

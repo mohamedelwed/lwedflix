@@ -1,0 +1,9 @@
+app.lwedflix.downloads.lwf-downloads-pngs-0 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/generated/res/pngs/debug
+app.lwedflix.downloads.lwf-downloads-updated_navigation_xml-1 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/generated/updated_navigation_xml/debug
+app.lwedflix.downloads.lwf-downloads-mergeDebugResources-2 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/intermediates/incremental/debug/mergeDebugResources/merged.dir
+app.lwedflix.downloads.lwf-downloads-mergeDebugResources-3 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/intermediates/incremental/debug/mergeDebugResources/stripped.dir
+app.lwedflix.downloads.lwf-downloads-debug-4 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/intermediates/merged_res/debug/mergeDebugResources
+app.lwedflix.downloads.lwf-downloads-debug-5 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/build/intermediates/packaged_res/debug/packageDebugResources
+app.lwedflix.downloads.lwf-downloads-debug-6 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/debug/res
+app.lwedflix.downloads.lwf-downloads-main-7 /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/res
+gradleHome-0 /home/torinou/.gradle

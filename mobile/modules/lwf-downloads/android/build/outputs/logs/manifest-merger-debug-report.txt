@@ -1,0 +1,42 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:1:1-12:12
+INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:1:1-12:12
+	package
+		INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:2:3-75
+	android:name
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:2:20-72
+uses-permission#android.permission.FOREGROUND_SERVICE_DATA_SYNC
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:3:3-85
+	android:name
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:3:20-82
+uses-permission#android.permission.POST_NOTIFICATIONS
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:4:3-75
+	android:name
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:4:20-72
+uses-permission#android.permission.WAKE_LOCK
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:5:3-66
+	android:name
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:5:20-63
+application
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:6:3-11:17
+service#app.lwedflix.downloads.LwfDownloadService
+ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:7:5-10:50
+	android:exported
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:9:7-31
+	android:foregroundServiceType
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:10:7-47
+	android:name
+		ADDED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml:8:7-63
+uses-sdk
+INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml
+INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /run/media/torinou/Disk2/Data From Desktop/Coding/lwedflix/mobile/modules/lwf-downloads/android/src/main/AndroidManifest.xml

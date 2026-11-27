@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-watch-v20/abc_alert_dialog_title_material.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/layout-watch-v20/abc_alert_dialog_title_material.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml"
+    }
+]

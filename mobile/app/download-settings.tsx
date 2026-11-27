@@ -28,6 +28,11 @@ const SPEEDS: { label: string; value: number }[] = [
   { label: '10 MB/s', value: 10 * MB },
 ];
 const PARALLEL: DownloadSettings['parallel'][] = [1, 2, 3];
+const WATCHING: { label: string; value: DownloadSettings['whileWatching'] }[] = [
+  { label: 'Slow down', value: 'slow' },
+  { label: 'Pause', value: 'pause' },
+  { label: 'Full speed', value: 'full' },
+];
 
 /** How downloads behave: quality, speed, Wi-Fi, how many at once, storage. */
 export default function DownloadSettingsScreen() {
@@ -85,6 +90,30 @@ export default function DownloadSettingsScreen() {
         <Switch
           value={settings.wifiOnly}
           onValueChange={(wifiOnly) => setSettings({ wifiOnly })}
+          trackColor={{ true: colors.accent, false: colors.white20 }}
+          thumbColor="#fff"
+        />
+      </View>
+
+      <Section title="While you watch" hint="What downloads do while something plays in Lwedflix, so the picture doesn't stutter.">
+        <Chips>
+          {WATCHING.map((w) => (
+            <Chip key={w.value} label={w.label} active={settings.whileWatching === w.value} onPress={() => setSettings({ whileWatching: w.value })} />
+          ))}
+        </Chips>
+      </Section>
+
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={styles.heading}>Download notification</Text>
+          <Text style={styles.hint}>
+            Progress, MB downloaded, speed and time left, with Pause and Cancel. It also keeps downloads going when Lwedflix is in the background; with it off,
+            downloads only run while Lwedflix is open.
+          </Text>
+        </View>
+        <Switch
+          value={settings.notification}
+          onValueChange={(notification) => setSettings({ notification })}
           trackColor={{ true: colors.accent, false: colors.white20 }}
           thumbColor="#fff"
         />

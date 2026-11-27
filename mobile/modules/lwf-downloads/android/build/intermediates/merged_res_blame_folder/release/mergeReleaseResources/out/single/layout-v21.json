@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-v21/notification_action_tombstone.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-core-1.13.1-20:/layout-v21/notification_action_tombstone.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-v21/notification_action.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-core-1.13.1-20:/layout-v21/notification_action.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-v21/notification_template_custom_big.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-core-1.13.1-20:/layout-v21/notification_template_custom_big.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/layout-v21/notification_template_icon_group.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-core-1.13.1-20:/layout-v21/notification_template_icon_group.xml"
+    }
+]

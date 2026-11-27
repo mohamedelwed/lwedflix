@@ -73,6 +73,11 @@ export function deleteDownload(id: string) {
   listeners.forEach((l) => l());
 }
 
+/** Every change to the list (downloads/background.ts follows it). */
+export function onDownloads(listener: () => void) {
+  return subscribe(listener);
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);

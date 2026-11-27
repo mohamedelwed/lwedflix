@@ -9,10 +9,10 @@ import { PROVIDERS, embedUrl } from '@shared/lib/providers';
 import { formatTimestamp } from '@shared/lib/watchRoom';
 import { js, makeToken, shimFor, wrapperFor, WRAPPER_BASE_URL } from './bridge';
 import SeekBar from './SeekBar';
-import Sheet, { type SheetOption } from '@/components/Sheet';
+import PlayerPanel, { type PanelTab } from './PlayerPanel';
 import type { CapturedStream, PlayableMedia, PlayerCommand, PlayerHandle, PlayerState } from './types';
 import { isAllowedPlayerNavigation } from './navigation';
-import { clearStreams, recordStream } from '@/downloads/engine';
+import { clearStreams, recordStream, setWatching } from '@/downloads/engine';
 import { colors, radius, space } from '@/theme';
 
 // After the viewer taps into the player, how long a server gets to start a
@@ -58,7 +58,12 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
   const [loading, setLoading] = useState(true);
   const [serverControls, setServerControls] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [sheet, setSheet] = useState<null | 'server' | 'subtitles' | 'speed' | 'settings'>(null);
+  const [sheet, setSheet] = useState<PanelTab | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTab>('server');
+  const openPanel = (tab: PanelTab) => {
+    setPanelTab(tab);
+    setSheet(tab);
+  };
   const [notice, setNotice] = useState<string | null>(null);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
   const streams = useRef<CapturedStream[]>([]);
@@ -76,11 +81,16 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
   const html = useMemo(() => wrapperFor(token, url, !!autoplay), [token]);
   const ready = state !== null;
 
-  // The screen stays on while the stream plays, not while it's paused.
+  // The screen stays on while the stream plays, not while it's paused; and
+  // downloads give way to it, as the download settings say.
   useEffect(() => {
     if (!playing) return;
     void activateKeepAwakeAsync('player');
-    return () => void deactivateKeepAwake('player');
+    setWatching(true);
+    return () => {
+      void deactivateKeepAwake('player');
+      setWatching(false);
+    };
   }, [playing]);
 
   const send = useCallback((command: PlayerCommand) => {
@@ -217,42 +227,11 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
   const time = scrubTime ?? state?.time ?? 0;
   const duration = state?.duration ?? 0;
 
-  const sheetOptions: SheetOption[] =
-    sheet === 'server'
-      ? PROVIDERS.map((p, i) => ({
-          key: p.name,
-          label: p.name,
-          selected: i === providerIndex,
-          onPress: () => {
-            tried.current.add(i);
-            setProviderIndex(i);
-            if (i === providerIndex) web.current?.injectJavaScript(js.load(url, true));
-          },
-        }))
-      : sheet === 'subtitles'
-        ? [
-            { key: 'off', label: 'Off', selected: (state?.track ?? -1) === -1, onPress: () => send({ action: 'setTrack', index: -1 }) },
-            ...(state?.tracks ?? []).map((t, i) => ({
-              key: String(i),
-              label: t.label || t.language || `Track ${i + 1}`,
-              detail: t.label && t.language ? t.language : undefined,
-              selected: state?.track === i,
-              onPress: () => send({ action: 'setTrack', index: i }),
-            })),
-          ]
-        : sheet === 'speed'
-          ? SPEEDS.map((s) => ({ key: String(s), label: s === 1 ? 'Normal' : `${s}×`, selected: (state?.rate ?? 1) === s, onPress: () => send({ action: 'setRate', rate: s }) }))
-          : sheet === 'settings'
-            ? [
-                { key: 'speed', label: 'Playback speed', detail: `${state?.rate ?? 1}×`, onPress: () => setTimeout(() => setSheet('speed'), 250) },
-                {
-                  key: 'controls',
-                  label: serverControls ? "Use Lwedflix's controls" : "Use the server's controls",
-                  detail: serverControls ? undefined : 'Brings back the server’s own menus (qualities, its subtitles)',
-                  onPress: toggleServerControls,
-                },
-              ]
-            : [];
+  const pickServer = (i: number) => {
+    tried.current.add(i);
+    setProviderIndex(i);
+    if (i === providerIndex) web.current?.injectJavaScript(js.load(url, true));
+  };
 
   return (
     <View style={[styles.root, fullscreen && styles.fullscreen]}>
@@ -306,11 +285,11 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
           )}
           <View style={{ flex: 1 }} />
           {serverControls && (
-            <IconButton onPress={() => setSheet('settings')} label="Player settings">
+            <IconButton onPress={() => openPanel('more')} label="Player settings">
               <SlidersHorizontal color="#fff" size={18} />
             </IconButton>
           )}
-          <Pressable onPress={() => setSheet('server')} style={styles.serverPill}>
+          <Pressable onPress={() => openPanel('server')} style={styles.serverPill}>
             <Server color="#fff" size={14} />
             <Text style={styles.serverText}>{provider.name}</Text>
           </Pressable>
@@ -337,7 +316,7 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
                 </Text>
               )}
             </View>
-            <Pressable onPress={() => setSheet('server')} style={styles.serverPill}>
+            <Pressable onPress={() => openPanel('server')} style={styles.serverPill}>
               <Server color="#fff" size={14} />
               <Text style={styles.serverText}>{provider.name}</Text>
             </Pressable>
@@ -347,9 +326,13 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
             <IconButton big onPress={() => (locked ? setNotice('The host has locked playback') : send({ action: 'seekBy', delta: -10 }))} label="Back 10 seconds">
               <RotateCcw color="#fff" size={26} />
             </IconButton>
-            <IconButton huge onPress={() => (locked ? setNotice('The host has locked playback') : send({ action: 'toggle' }))} label={playing ? 'Pause' : 'Play'}>
-              {state?.buffering ? <ActivityIndicator color="#fff" size="large" /> : playing ? <Pause color="#fff" fill="#fff" size={34} /> : <Play color="#fff" fill="#fff" size={34} />}
-            </IconButton>
+            <View>
+              <IconButton huge onPress={() => (locked ? setNotice('The host has locked playback') : send({ action: 'toggle' }))} label={playing ? 'Pause' : 'Play'}>
+                {playing ? <Pause color="#fff" fill="#fff" size={34} /> : <Play color="#fff" fill="#fff" size={34} />}
+              </IconButton>
+              {/* Loading shows under the button, not instead of it. */}
+              {state?.buffering && <ActivityIndicator color="#fff" size="small" style={styles.buffering} />}
+            </View>
             <IconButton big onPress={() => (locked ? setNotice('The host has locked playback') : send({ action: 'seekBy', delta: 10 }))} label="Forward 10 seconds">
               <RotateCw color="#fff" size={26} />
             </IconButton>
@@ -372,14 +355,14 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
             />
             <View style={styles.buttonsRow}>
               {(state?.tracks.length ?? 0) > 0 && (
-                <IconButton onPress={() => setSheet('subtitles')} label="Subtitles">
+                <IconButton onPress={() => openPanel('subtitles')} label="Subtitles">
                   <Captions color={state && state.track >= 0 ? colors.accent : '#fff'} size={20} />
                 </IconButton>
               )}
-              <IconButton onPress={() => setSheet('speed')} label="Speed">
+              <IconButton onPress={() => openPanel('speed')} label="Speed">
                 <Gauge color="#fff" size={20} />
               </IconButton>
-              <IconButton onPress={() => setSheet('settings')} label="Player settings">
+              <IconButton onPress={() => openPanel('more')} label="Player settings">
                 <SlidersHorizontal color="#fff" size={20} />
               </IconButton>
               <View style={{ flex: 1 }} />
@@ -403,11 +386,35 @@ const PlayerView = forwardRef<PlayerHandle, PlayerViewProps>(function PlayerView
         </View>
       )}
 
-      <Sheet
-        visible={sheet !== null}
-        title={sheet === 'server' ? 'Server' : sheet === 'subtitles' ? 'Subtitles' : sheet === 'speed' ? 'Speed' : 'Player'}
-        options={sheetOptions}
+      <PlayerPanel
+        open={sheet !== null}
+        tab={panelTab}
+        fullscreen={fullscreen}
+        onTab={setPanelTab}
         onClose={() => setSheet(null)}
+        data={{
+          servers: PROVIDERS.map((p, i) => ({ name: p.name, selected: i === providerIndex })),
+          tracks: (state?.tracks ?? []).map((t, i) => ({
+            label: t.label || t.language || `Track ${i + 1}`,
+            language: t.label && t.language ? t.language : undefined,
+            selected: state?.track === i,
+          })),
+          subtitlesOff: (state?.track ?? -1) === -1,
+          speeds: SPEEDS,
+          rate: state?.rate ?? 1,
+          serverControls,
+        }}
+        actions={{
+          pickServer: (i) => {
+            setSheet(null);
+            pickServer(i);
+          },
+          pickTrack: (i) => send({ action: 'setTrack', index: i }),
+          pickSpeed: (rate) => send({ action: 'setRate', rate }),
+          setServerControls: (on) => {
+            if (on !== serverControls) toggleServerControls();
+          },
+        }}
       />
     </View>
   );
@@ -451,5 +458,6 @@ const styles = StyleSheet.create({
   nextButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white20, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.full, marginRight: 4 },
   nextText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   notice: { position: 'absolute', top: 56, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.75)', borderColor: colors.white20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full, maxWidth: '90%' },
+  buffering: { position: 'absolute', top: 80, alignSelf: 'center' },
   noticeText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' },
 });

@@ -1,0 +1,36 @@
+{
+    "logs": [
+        {
+            "outputFile": "app.lwedflix.downloads.lwf-downloads-release-27:/values-watch-v21/values-watch-v21.xml",
+            "map": [
+                {
+                    "source": "/home/torinou/.gradle/caches/9.4.1/transforms/54438e123a6588e5a1f85a169d5dd246/transformed/appcompat-1.7.0/res/values-watch-v21/values-watch-v21.xml",
+                    "from": {
+                        "startLines": "2,6,10",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,271,499",
+                        "endLines": "5,9,13",
+                        "endColumns": "12,12,12",
+                        "endOffsets": "266,494,724"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "app.lwedflix.downloads.lwf-downloads-mergeReleaseResources-25:/values-watch-v21/values-watch-v21.xml",
+            "map": [
+                {
+                    "source": "/home/torinou/.gradle/caches/9.4.1/transforms/54438e123a6588e5a1f85a169d5dd246/transformed/appcompat-1.7.0/res/values-watch-v21/values-watch-v21.xml",
+                    "from": {
+                        "startLines": "2,6,10",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,271,499",
+                        "endLines": "5,9,13",
+                        "endColumns": "12,12,12",
+                        "endOffsets": "266,494,724"
+                    }
+                }
+            ]
+        }
+    ]
+}

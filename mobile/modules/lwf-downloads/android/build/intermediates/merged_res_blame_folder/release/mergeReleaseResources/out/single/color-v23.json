@@ -1,0 +1,38 @@
+[
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_btn_colored_borderless_text_material.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_btn_colored_borderless_text_material.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_btn_colored_text_material.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_btn_colored_text_material.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_switch_track.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_switch_track.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_default.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_default.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_edittext.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_edittext.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_btn_checkable.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_btn_checkable.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_seek_thumb.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_seek_thumb.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_color_highlight_material.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_color_highlight_material.xml"
+    },
+    {
+        "merged": "app.lwedflix.downloads.lwf-downloads-release-27:/color-v23/abc_tint_spinner.xml",
+        "source": "app.lwedflix.downloads.lwf-downloads-appcompat-1.7.0-5:/color-v23/abc_tint_spinner.xml"
+    }
+]

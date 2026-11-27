@@ -11,7 +11,8 @@ import { getShowProgress } from '@shared/lib/episodeProgress';
 import TopBar from '@/components/TopBar';
 import Chip from '@/components/Chip';
 import { EmptyState } from '@/components/States';
-import { cancelDownload, networkAllowed, pauseDownload, removeDownload, resumeDownload, retryDownload, startLater } from '@/downloads/engine';
+import { cancelDownload, pauseDownload, removeDownload, resumeDownload, retryDownload, startLater, waitingReason } from '@/downloads/engine';
+import { sizeLine } from '@/downloads/background';
 import { useDownloadSettings } from '@/downloads/settings';
 import { isActive, useDownloadsList, type StoredDownload } from '@/downloads/store';
 import { imageUrl } from '@/lib/media';
@@ -86,19 +87,19 @@ function Row({ d }: { d: StoredDownload }) {
 
   const status =
     d.state === 'downloading'
-      ? `${Math.round(d.progress * 100)}%${d.speed ? ` · ${formatBytes(d.speed)}/s` : ' · starting…'}${d.eta ? ` · ${formatEta(d.eta)}` : ''}`
+      ? `${Math.round(d.progress * 100)}% · ${sizeLine(d)}${d.speed ? ` · ${formatBytes(d.speed)}/s` : ' · starting…'}${d.eta ? ` · ${formatEta(d.eta)}` : ''}`
       : d.state === 'queued'
         ? d.held
           ? 'Saved for later'
-          : !networkAllowed()
-            ? 'Waiting for Wi-Fi'
+          : waitingReason()
+            ? waitingReason()!
             : d.tries
               ? 'Trying a fresh stream…'
               : 'Waiting'
         : d.state === 'resolving'
           ? 'Finding the stream…'
           : d.state === 'paused'
-            ? `Paused · ${Math.round(d.progress * 100)}%`
+            ? `Paused · ${Math.round(d.progress * 100)}% · ${sizeLine(d)}`
             : d.state === 'done'
               ? [d.quality, formatDuration(d.duration), formatBytes(d.bytes)].filter(Boolean).join(' · ')
               : d.state === 'missing'

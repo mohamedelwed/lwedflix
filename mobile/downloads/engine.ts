@@ -9,7 +9,7 @@ import type { CapturedStream } from '@/player/types';
 import * as Network from 'expo-network';
 import { DownloadError, saveHls } from './hlsJob.ts';
 import { headerVariants, withPlaylistQuery } from './asking.ts';
-import { getSettings, onSettings } from './settings';
+import { getSettings, onSettings, WATCHING_SLOW } from './settings';
 import { deleteDownload, getDownload, getDownloads, isActive, putDownload, updateDownload, type StoredDownload } from './store';
 
 // Downloads on the phone, as electron/downloads.js does them on desktop:
@@ -45,14 +45,34 @@ try {
   // No network module (tests): always allowed.
 }
 /** Whether downloads may use the connection right now. */
-export const networkAllowed = () => connected && (!getSettings().wifiOnly || onWifi);
+export const networkAllowed = () => connected && (!getSettings().wifiOnly || onWifi) && !pausedForWatching();
+/** Why queued downloads wait, for the list. */
+export const waitingReason = (): string | null =>
+  !connected ? 'Waiting for a connection' : getSettings().wifiOnly && !onWifi ? 'Waiting for Wi-Fi' : pausedForWatching() ? 'Waiting while you watch' : null;
 onSettings(() => pump());
 
 // ---- Speed limit: one budget for all downloads together ----------------------
 
+// ---- Smart speed: something plays in Lwedflix -------------------------------
+
+let watching = false;
+/** The player says when it plays (PlayerView); downloads give way as the settings say. */
+export function setWatching(playing: boolean) {
+  if (watching === playing) return;
+  watching = playing;
+  pump();
+}
+const pausedForWatching = () => watching && getSettings().whileWatching === 'pause';
+
+function currentLimit(): number {
+  const { speedLimit, whileWatching } = getSettings();
+  if (watching && whileWatching === 'slow') return speedLimit ? Math.min(speedLimit, WATCHING_SLOW) : WATCHING_SLOW;
+  return speedLimit;
+}
+
 let freeAt = 0;
 async function throttle(bytes: number) {
-  const limit = getSettings().speedLimit;
+  const limit = currentLimit();
   if (!limit) {
     freeAt = 0;
     return;

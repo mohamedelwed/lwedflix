@@ -13,10 +13,17 @@ export interface DownloadSettings {
   speedLimit: number;
   /** Downloads wait for Wi-Fi (and pause when it goes). */
   wifiOnly: boolean;
+  /** The ongoing notification, which also keeps downloads going in the background. */
+  notification: boolean;
+  /** What downloads do while something plays in Lwedflix, so it doesn't stutter. */
+  whileWatching: 'pause' | 'slow' | 'full';
 }
 
 const KEY = 'lwedflix:download-settings';
-export const DEFAULT_SETTINGS: DownloadSettings = { quality: 'ask', parallel: 2, speedLimit: 0, wifiOnly: false };
+export const DEFAULT_SETTINGS: DownloadSettings = { quality: 'ask', parallel: 2, speedLimit: 0, wifiOnly: false, notification: true, whileWatching: 'slow' };
+
+/** "Slow down" while watching: enough to keep going, little enough not to compete. */
+export const WATCHING_SLOW = 300 * 1024;
 
 let current: DownloadSettings | null = null;
 const listeners = new Set<() => void>();

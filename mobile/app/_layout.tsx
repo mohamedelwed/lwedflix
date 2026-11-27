@@ -13,6 +13,7 @@ import { DialogHost } from '@/components/Dialog';
 import { startMovieProgressSync } from '@shared/lib/movieProgressSync';
 import { flushWatchHistory } from '@shared/lib/watchHistory';
 import { resumeDownloads } from '@/downloads/engine';
+import { startBackgroundDownloads } from '@/downloads/background';
 import { colors } from '@/theme';
 
 const theme = {
@@ -26,6 +27,7 @@ export default function RootLayout() {
     startMovieProgressSync();
     void flushWatchHistory();
     void resumeDownloads();
+    startBackgroundDownloads();
   }, []);
 
   return (

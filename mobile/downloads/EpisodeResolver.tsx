@@ -173,7 +173,6 @@ function HiddenPlayer({ session, token, update }: { session: SessionState; token
         setSupportMultipleWindows={false}
         javaScriptCanOpenWindowsAutomatically={false}
         mixedContentMode="always"
-        webviewDebuggingEnabled /* TEMP: investigating downloads */
         onShouldStartLoadWithRequest={(req: ShouldStartLoadRequest) => isAllowedPlayerNavigation(req.url, req.isTopFrame ?? true)}
         style={StyleSheet.absoluteFill}
       />

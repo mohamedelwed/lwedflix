@@ -492,7 +492,6 @@ async function runJob(id: string) {
       if (run.cancelled) return void session.close();
       run.session = session;
       const found = session.stream;
-      console.log('[lwf-dl] stream found', found.url.slice(0, 60), 'has query:', found.url.includes('?'), 'frame', found.frame.slice(0, 60));
       noteUserAgent(found.ua);
       const kind = classify(found.url, found.type, found.size || undefined);
       run.source = { url: found.url, kind: kind === 'file' ? 'file' : 'hls', headers: headersFor(found.frame) };
@@ -503,7 +502,6 @@ async function runJob(id: string) {
     if (run.source.kind === 'hls') await downloadHls(id, run);
     else await downloadFile(id, run);
   } catch (err) {
-    console.log('[lwf-dl] job failed', String(err));
     const job = getDownload(id);
     if (run.cancelled || !job) return;
     removeFiles(id, true);
@@ -621,13 +619,11 @@ async function getPiece(run: Run, url: string, range?: { offset: number; length:
         const bytes = await fetchBytes(tokened, asking, range, run.controller.signal);
         source.headers = asking.headers;
         run.inheritQuery = true;
-        console.log('[lwf-dl] pieces need the playlist token');
         return bytes;
       } catch {
         // Not that either: through the player.
       }
     }
-    console.log('[lwf-dl] direct failed', String(err), url.slice(0, 120));
     if (!run.session) throw err;
     run.viaPlayer = true;
     return viaPlayer(run, tokened ?? url, range);
@@ -640,13 +636,11 @@ async function viaPlayer(run: Run, url: string, range?: { offset: number; length
     if (run.cancelled) throw new Error('cancelled');
     try {
       const bytes = await run.session!.fetch(url, range);
-      console.log('[lwf-dl] via player ok', bytes.length, url.slice(0, 80));
       await throttle(bytes.length);
       return bytes;
     } catch (err) {
       lastError = err;
       const status = (err as { status?: number }).status ?? 0;
-      console.log('[lwf-dl] via player failed', String(err), status, url.slice(0, 60), 'tokened:', url.includes('token='));
       if (GONE.has(status) && attempt >= 2) {
         throw new DownloadError(`The server refused the download (error ${status} from ${hostOf(url)}), even through the player. Tap retry to try a fresh stream, or try another server.`);
       }
